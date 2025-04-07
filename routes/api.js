@@ -74,8 +74,17 @@ router.get('/results/:ip', (req, res) => {
 router.post('/ping', async (req, res) => {
   console.log(`[${new Date().toISOString()}] Manual ping request received`);
   const results = await pingService.pingAllTargets();
+  
+  // Get the timing information
+  const pingStatus = pingService.getPingStatus();
+  
   console.log(`[${new Date().toISOString()}] Manual ping completed with ${results.length} results`);
-  res.json(results);
+  
+  // Return both the results and timing information
+  res.json({
+    results: results,
+    pingStatus: pingStatus
+  });
 });
 
 // Discover hosts in a network range with progress updates
@@ -229,6 +238,33 @@ router.get('/debug/database', (req, res) => {
   }
 });
 
+// Add a route to reset a target's ping data
+router.post('/targets/:ip/reset', (req, res) => {
+  const { ip } = req.params;
+  
+  try {
+    console.log(`[${new Date().toISOString()}] Resetting ping data for target: ${ip}`);
+    
+    // Check if target exists
+    const targets = db.getTargets();
+    const targetExists = targets.some(target => target.ip === ip);
+    
+    if (!targetExists) {
+      console.log(`[${new Date().toISOString()}] Reset failed: Target ${ip} not found`);
+      return res.status(404).json({ error: 'Target not found' });
+    }
+    
+    // Clear ping results for the target
+    db.clearPingResults(ip);
+    
+    console.log(`[${new Date().toISOString()}] Successfully reset ping data for ${ip}`);
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error resetting ping data for ${ip}:`, error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Add a route to reset the database
 router.post('/debug/reset-database', (req, res) => {
   try {
@@ -247,6 +283,17 @@ router.post('/debug/reset-database', (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// Get ping cycle status (for UI timer sync)
+router.get('/ping/status', (req, res) => {
+  try {
+    const pingStatus = pingService.getPingStatus();
+    res.json(pingStatus);
+  } catch (error) {
+    console.error('Error getting ping status:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

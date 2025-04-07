@@ -6,35 +6,66 @@
   <title>Network Monitor</title>
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>Network Monitor</h1>
+  <div class="dashboard-container">
+    <header class="dashboard-header">
+      <div class="header-left">
+        <h1>Network Monitor <span class="energy-saving-mode">Energy-saving mode</span></h1>
+        <div class="ping-timer">
+          <span>Next ping in:</span>
+          <span id="ping-timer-value" class="ping-timer-value">60</span>
+          <span>seconds</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button id="add-new-target" class="action-button">+ Add Target</button>
+        <button id="discover-network" class="action-button">Discover Network</button>
+      </div>
     </header>
     
-    <div class="controls">
-      <div class="add-target">
-        <h2>Add Target</h2>
-        <form id="add-target-form">
-          <input type="text" id="target-ip" placeholder="IP Address" required>
-          <input type="text" id="target-name" placeholder="Name (optional)">
-          <button type="submit">Add Target</button>
-        </form>
-      </div>
-      
-      <div class="discover-hosts">
-        <h2>Discover Hosts</h2>
-        <form id="discover-form">
-          <input type="text" id="network-range" placeholder="Network Range (e.g., 192.168.1.0/24)" required>
-          <button type="submit">Discover</button>
-        </form>
-      </div>
+    <div id="add-target-panel" class="dashboard-panel">
+      <form id="add-target-form">
+        <div class="panel-header">
+          <h2>Add New Target</h2>
+          <button type="button" class="close-panel">×</button>
+        </div>
+        <div class="panel-body">
+          <div class="form-group">
+            <label for="target-ip">IP Address</label>
+            <input type="text" id="target-ip" placeholder="e.g., 192.168.1.1" required>
+          </div>
+          <div class="form-group">
+            <label for="target-name">Name (optional)</label>
+            <input type="text" id="target-name" placeholder="e.g., Router">
+          </div>
+          <button type="submit" class="submit-button">Add Target</button>
+        </div>
+      </form>
     </div>
     
-    <div class="graphs-container">
-      <h2>Monitored Targets</h2>
-      <div id="graphs" class="graphs"></div>
+    <div id="discover-panel" class="dashboard-panel">
+      <form id="discover-form">
+        <div class="panel-header">
+          <h2>Discover Network</h2>
+          <button type="button" class="close-panel">×</button>
+        </div>
+        <div class="panel-body">
+          <div class="form-group">
+            <label for="network-range">Network Range</label>
+            <input type="text" id="network-range" placeholder="e.g., 192.168.1.0/24" required>
+          </div>
+          <button type="submit" class="submit-button">Start Discovery</button>
+        </div>
+      </form>
+    </div>
+    
+    <div class="dashboard-main">
+      <div class="graphs-container">
+        <h2>Monitored Targets <span id="targets-counter" class="targets-counter">0</span></h2>
+        <div id="graphs" class="graphs"></div>
+      </div>
     </div>
     
     <div class="targets-container" style="display: none;">

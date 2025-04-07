@@ -4,9 +4,53 @@ document.addEventListener('DOMContentLoaded', () => {
   const discoverForm = document.getElementById('discover-form');
   const targetsList = document.getElementById('targets-list');
   const graphsContainer = document.getElementById('graphs');
+  const addTargetPanel = document.getElementById('add-target-panel');
+  const discoverPanel = document.getElementById('discover-panel');
+  const addNewTargetBtn = document.getElementById('add-new-target');
+  const discoverNetworkBtn = document.getElementById('discover-network');
+  const closePanelBtns = document.querySelectorAll('.close-panel');
+  const targetsCounter = document.getElementById('targets-counter');
+  const pingTimerValue = document.getElementById('ping-timer-value');
   
   // Chart objects
   const charts = {};
+  // Track fullscreen state
+  let currentFullscreenGraph = null;
+  
+  // Timer variables
+  const PING_INTERVAL = 60; // in seconds (fallback value)
+  let nextPingIn = PING_INTERVAL;
+  let pingTimer;
+  
+  // Animation settings
+  const headerAnimation = {
+    targets: '.dashboard-header',
+    translateY: [-50, 0],
+    opacity: [0, 1],
+    duration: 800,
+    easing: 'easeOutElastic(1, .8)'
+  };
+  
+  const graphAnimation = {
+    targets: '.graph-container',
+    translateY: [20, 0],
+    opacity: [0, 1],
+    delay: anime.stagger(100),
+    duration: 600,
+    easing: 'easeOutCubic'
+  };
+  
+  // Run initial animations
+  anime(headerAnimation);
+  
+  // Add title attribute to make it clear the timer is clickable
+  const pingTimerElement = document.querySelector('.ping-timer');
+  if (pingTimerElement) {
+    pingTimerElement.setAttribute('title', 'Click to refresh all targets manually');
+  }
+  
+  // Start ping timer with server sync
+  syncWithServerAndStartTimer();
   
   // Load targets on page load
   loadTargets();
@@ -15,8 +59,112 @@ document.addEventListener('DOMContentLoaded', () => {
   addTargetForm.addEventListener('submit', handleAddTarget);
   discoverForm.addEventListener('submit', handleDiscoverHosts);
   
-  // Refresh data every 60 seconds
-  setInterval(loadTargets, 60000);
+  // Panel toggle buttons
+  addNewTargetBtn.addEventListener('click', () => {
+    togglePanel(addTargetPanel);
+    closePanel(discoverPanel);
+  });
+  
+  discoverNetworkBtn.addEventListener('click', () => {
+    togglePanel(discoverPanel);
+    closePanel(addTargetPanel);
+  });
+  
+  // Close panel buttons
+  closePanelBtns.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const panel = e.target.closest('.dashboard-panel');
+      closePanel(panel);
+    });
+  });
+  
+  // Sync with server and start timer
+  async function syncWithServerAndStartTimer() {
+    try {
+      const response = await fetch('/api/ping/status');
+      if (response.ok) {
+        const data = await response.json();
+        // Use server's secondsUntilNextPing to sync our timer
+        nextPingIn = data.secondsUntilNextPing;
+        startPingTimer();
+      } else {
+        // Fall back to local timer if server sync fails
+        startPingTimer();
+      }
+    } catch (error) {
+      console.error('Error syncing with server timer:', error);
+      // Fall back to local timer
+      startPingTimer();
+    }
+    
+    // Re-sync with server every 5 minutes to prevent drift
+    setInterval(syncWithServerAndStartTimer, 5 * 60 * 1000);
+  }
+  
+  // Start ping countdown timer
+  function startPingTimer() {
+    // Clear any existing timer
+    if (pingTimer) {
+      clearInterval(pingTimer);
+    }
+    
+    // Initialize timer value
+    pingTimerValue.textContent = nextPingIn;
+    
+    // Start countdown
+    pingTimer = setInterval(() => {
+      nextPingIn--;
+      pingTimerValue.textContent = nextPingIn;
+      
+      // When timer reaches 0, reset and trigger ping
+      if (nextPingIn <= 0) {
+        nextPingIn = PING_INTERVAL;
+        pingTimerValue.textContent = nextPingIn;
+        loadTargets();
+      }
+    }, 1000);
+  }
+  
+  // Panel functions
+  function togglePanel(panel) {
+    if (panel.classList.contains('active')) {
+      closePanel(panel);
+    } else {
+      openPanel(panel);
+    }
+  }
+  
+  function openPanel(panel) {
+    panel.classList.add('active');
+    anime({
+      targets: panel,
+      right: '20px',
+      opacity: 1,
+      duration: 400,
+      easing: 'easeOutCubic'
+    });
+  }
+  
+  function closePanel(panel) {
+    anime({
+      targets: panel,
+      right: -350,
+      opacity: 0,
+      duration: 400,
+      easing: 'easeOutCubic',
+      complete: function() {
+        panel.classList.remove('active');
+      }
+    });
+  }
+  
+  // Refresh data every 60 seconds (will be synced with server timer through nextPingIn)
+  setInterval(() => {
+    // Only load if the timer is close to zero to avoid double refresh
+    if (nextPingIn <= 1) {
+      loadTargets();
+    }
+  }, PING_INTERVAL * 1000);
   
   // Add a global variable to track discovery state
   let isDiscoveryRunning = false;
@@ -45,7 +193,57 @@ document.addEventListener('DOMContentLoaded', () => {
       if (response.ok) {
         ipInput.value = '';
         nameInput.value = '';
-        loadTargets();
+        closePanel(addTargetPanel);
+        
+        // Get current count and update
+        let currentCount = parseInt(targetsCounter.textContent) || 0;
+        targetsCounter.textContent = currentCount + 1;
+        
+        // Animate success notification
+        const notification = document.createElement('div');
+        notification.className = 'notification success';
+        notification.textContent = `Target "${target.name}" added successfully`;
+        document.body.appendChild(notification);
+        
+        anime({
+          targets: notification,
+          opacity: [0, 1],
+          translateY: [20, 0],
+          duration: 300,
+          easing: 'easeOutCubic',
+          complete: function() {
+            setTimeout(() => {
+              anime({
+                targets: notification,
+                opacity: 0,
+                translateY: -20,
+                duration: 300,
+                easing: 'easeOutCubic',
+                complete: function() {
+                  notification.remove();
+                }
+              });
+            }, 3000);
+          }
+        });
+        
+        // Trigger a ping for this target immediately
+        const pingResponse = await fetch('/api/ping', { method: 'POST' });
+        if (pingResponse.ok) {
+          const pingData = await pingResponse.json();
+          
+          // Sync timer with server's ping cycle
+          if (pingData.pingStatus && pingData.pingStatus.secondsUntilNextPing !== undefined) {
+            nextPingIn = pingData.pingStatus.secondsUntilNextPing;
+            pingTimerValue.textContent = nextPingIn;
+          }
+          
+          // Load targets with the fresh data
+          loadTargets();
+        } else {
+          // Just load targets if ping fails
+          loadTargets();
+        }
       } else {
         const error = await response.json();
         alert(`Error: ${error.message || 'Failed to add target'}`);
@@ -358,11 +556,52 @@ document.addEventListener('DOMContentLoaded', () => {
       const response = await fetch('/api/targets');
       const targets = await response.json();
       
+      // Update targets counter
+      targetsCounter.textContent = targets.length;
+      
+      // Render the targets list first
       renderTargets(targets);
       
-      // Load ping results for each target
+      // Fetch and process ping results for each target
       for (const target of targets) {
-        loadPingResults(target.ip);
+        try {
+          // First try to get the latest ping results for each target
+          const resultsResponse = await fetch(`/api/results/${target.ip}?limit=1`);
+          if (resultsResponse.ok) {
+            const latestResults = await resultsResponse.json();
+            
+            // If we have at least one result, update the target status immediately
+            if (latestResults.length > 0) {
+              const latestResult = latestResults[0];
+              
+              // Update the target card status with the latest result
+              // Use a better selector to find the target card by IP address
+              const targetCards = document.querySelectorAll('.target-card');
+              for (const card of targetCards) {
+                const ipText = card.querySelector('p').textContent;
+                if (ipText.includes(target.ip)) {
+                  const statusElement = card.querySelector('.status');
+                  const responseTimeElement = card.querySelector('.response-time');
+                  
+                  if (statusElement) {
+                    statusElement.textContent = latestResult.status || 'Unknown';
+                    card.className = `target-card ${latestResult.status || 'unknown'}`;
+                  }
+                  
+                  if (responseTimeElement) {
+                    responseTimeElement.textContent = latestResult.time ? `${latestResult.time} ms` : 'N/A';
+                  }
+                  break;
+                }
+              }
+            }
+          }
+          
+          // Now load all ping results for the graph
+          loadPingResults(target.ip);
+        } catch (error) {
+          console.error(`Error processing ping results for ${target.ip}:`, error);
+        }
       }
     } catch (error) {
       console.error('Error loading targets:', error);
@@ -386,18 +625,242 @@ document.addEventListener('DOMContentLoaded', () => {
         <p>IP: ${target.ip}</p>
         <p>Status: <span class="status">${target.status || 'Unknown'}</span></p>
         <p>Last Response: <span class="response-time">${target.time ? `${target.time} ms` : 'N/A'}</span></p>
-        <button class="remove-btn" data-ip="${target.ip}">×</button>
+        <div class="dropdown">
+          <button class="dropdown-toggle" title="Options">
+            <div class="dots">
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <div class="dot"></div>
+            </div>
+          </button>
+          <div class="dropdown-menu">
+            <div class="dropdown-item" data-action="fullscreen" data-ip="${target.ip}">
+              <span class="icon">↗️</span> Full Screen
+            </div>
+            <div class="dropdown-item" data-action="reset" data-ip="${target.ip}">
+              <span class="icon">🔄</span> Reset Data
+            </div>
+            <div class="dropdown-item danger" data-action="remove" data-ip="${target.ip}">
+              <span class="icon">🗑️</span> Remove Host
+            </div>
+          </div>
+        </div>
       `;
       
       targetsList.appendChild(targetCard);
-      
-      // Add event listener to remove button
-      const removeBtn = targetCard.querySelector('.remove-btn');
-      removeBtn.addEventListener('click', () => removeTarget(target.ip));
     });
   }
   
-  // Remove a target
+  // Handle dropdown menu clicks
+  document.addEventListener('click', (e) => {
+    // Close all dropdown menus when clicking outside
+    if (!e.target.closest('.dropdown')) {
+      document.querySelectorAll('.dropdown-menu').forEach(menu => {
+        menu.classList.remove('show');
+      });
+    }
+    
+    // Toggle dropdown menu when clicking on the toggle button
+    if (e.target.closest('.dropdown-toggle')) {
+      const menu = e.target.closest('.dropdown').querySelector('.dropdown-menu');
+      menu.classList.toggle('show');
+      e.stopPropagation();
+    }
+    
+    // Handle dropdown menu item clicks
+    if (e.target.closest('.dropdown-item')) {
+      const item = e.target.closest('.dropdown-item');
+      const action = item.dataset.action;
+      const ip = item.dataset.ip;
+      
+      if (action && ip) {
+        handleDropdownAction(action, ip);
+      }
+      
+      // Close the dropdown menu
+      item.closest('.dropdown-menu').classList.remove('show');
+      e.stopPropagation();
+    }
+  });
+  
+  // Handle dropdown menu actions
+  function handleDropdownAction(action, ip) {
+    switch (action) {
+      case 'fullscreen':
+        openFullscreen(ip);
+        break;
+      case 'reset':
+        resetHostData(ip);
+        break;
+      case 'remove':
+        removeTarget(ip);
+        break;
+    }
+  }
+  
+  // Open graph in fullscreen mode
+  function openFullscreen(ip) {
+    const graphId = `graph-${ip.replace(/\./g, '-')}`;
+    const graphContainer = document.getElementById(graphId);
+    
+    if (!graphContainer) return;
+    
+    // Get the graph header content
+    const headerContent = graphContainer.querySelector('.graph-header').innerHTML;
+    const chartCanvas = graphContainer.querySelector('canvas');
+    
+    // Create fullscreen container
+    const fullscreenContainer = document.createElement('div');
+    fullscreenContainer.className = 'fullscreen-graph';
+    fullscreenContainer.innerHTML = `
+      <div class="fullscreen-header">
+        <div class="header-content">${headerContent}</div>
+        <button class="exit-fullscreen">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M1 1L15 15M1 15L15 1" stroke="currentColor" stroke-width="2"/>
+          </svg>
+          Exit Fullscreen
+        </button>
+      </div>
+      <div class="fullscreen-chart-container">
+        <canvas id="fullscreen-chart"></canvas>
+      </div>
+    `;
+    
+    document.body.appendChild(fullscreenContainer);
+    
+    // Track current fullscreen graph
+    currentFullscreenGraph = {
+      ip: ip,
+      container: fullscreenContainer
+    };
+    
+    // Create a new chart in fullscreen mode
+    const fullscreenChart = document.getElementById('fullscreen-chart');
+    if (charts[ip]) {
+      const chartConfig = charts[ip].config;
+      
+      // Create a new chart with the same data but optimized for fullscreen
+      const fsChart = new Chart(fullscreenChart, {
+        type: chartConfig.type,
+        data: JSON.parse(JSON.stringify(chartConfig.data)), // Deep clone data
+        options: {
+          ...chartConfig.options,
+          maintainAspectRatio: false,
+          responsive: true,
+          animation: {
+            duration: 800,
+            easing: 'easeOutQuart'
+          },
+          scales: {
+            ...chartConfig.options.scales,
+            y: {
+              ...chartConfig.options.scales.y,
+              ticks: {
+                ...chartConfig.options.scales.y.ticks,
+                font: {
+                  size: 14
+                }
+              },
+              title: {
+                ...chartConfig.options.scales.y.title,
+                font: {
+                  size: 16
+                }
+              }
+            },
+            x: {
+              ...chartConfig.options.scales.x,
+              ticks: {
+                ...chartConfig.options.scales.x.ticks,
+                font: {
+                  size: 14
+                }
+              },
+              title: {
+                ...chartConfig.options.scales.x.title,
+                font: {
+                  size: 16
+                }
+              }
+            }
+          },
+          plugins: {
+            ...chartConfig.options.plugins,
+            tooltip: {
+              ...chartConfig.options.plugins.tooltip,
+              titleFont: {
+                size: 16
+              },
+              bodyFont: {
+                size: 14
+              }
+            }
+          }
+        }
+      });
+      
+      // Add exit fullscreen event listener
+      const exitBtn = fullscreenContainer.querySelector('.exit-fullscreen');
+      exitBtn.addEventListener('click', () => {
+        fullscreenContainer.remove();
+        currentFullscreenGraph = null;
+      });
+    }
+  }
+  
+  // Reset host data
+  async function resetHostData(ip) {
+    if (!confirm(`Are you sure you want to reset data for ${ip}? This will clear its ping history.`)) {
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/targets/${ip}/reset`, {
+        method: 'POST'
+      });
+      
+      if (response.ok) {
+        // Show success notification
+        const notification = document.createElement('div');
+        notification.className = 'notification success';
+        notification.textContent = `Data for ${ip} has been reset`;
+        document.body.appendChild(notification);
+        
+        anime({
+          targets: notification,
+          opacity: [0, 1],
+          translateY: [20, 0],
+          duration: 300,
+          easing: 'easeOutCubic',
+          complete: function() {
+            setTimeout(() => {
+              anime({
+                targets: notification,
+                opacity: 0,
+                translateY: -20,
+                duration: 300,
+                easing: 'easeOutCubic',
+                complete: function() {
+                  notification.remove();
+                }
+              });
+            }, 3000);
+          }
+        });
+        
+        // Reload the target's data
+        loadPingResults(ip);
+      } else {
+        alert('Failed to reset target data.');
+      }
+    } catch (error) {
+      console.error('Error resetting target data:', error);
+      alert('Failed to reset target data. Check console for details.');
+    }
+  }
+  
+  // Remove a target with animation
   async function removeTarget(ip) {
     if (!confirm(`Are you sure you want to remove ${ip} from monitoring?`)) {
       return;
@@ -409,15 +872,33 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       
       if (response.ok) {
-        // Remove chart if it exists
-        if (charts[ip]) {
-          charts[ip].destroy();
-          delete charts[ip];
-          
-          const graphElement = document.getElementById(`graph-${ip.replace(/\./g, '-')}`);
-          if (graphElement) {
-            graphElement.remove();
-          }
+        // Get current count and update
+        let currentCount = parseInt(targetsCounter.textContent) || 0;
+        if (currentCount > 0) {
+          targetsCounter.textContent = currentCount - 1;
+        }
+        
+        // Get the graph element
+        const graphElement = document.getElementById(`graph-${ip.replace(/\./g, '-')}`);
+        
+        if (graphElement) {
+          // Animate the removal
+          anime({
+            targets: graphElement,
+            opacity: [1, 0],
+            translateY: [0, -20],
+            duration: 500,
+            easing: 'easeOutCubic',
+            complete: function() {
+              // Remove chart if it exists
+              if (charts[ip]) {
+                charts[ip].destroy();
+                delete charts[ip];
+              }
+              
+              graphElement.remove();
+            }
+          });
         }
         
         loadTargets();
@@ -438,18 +919,9 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (results.length > 0) {
         renderGraph(ip, results);
-        
-        // Update status in the target card
-        const latestResult = results[results.length - 1];
-        const targetCard = Array.from(document.querySelectorAll('.target-card'))
-          .find(card => card.querySelector('p').textContent.includes(ip));
-        
-        if (targetCard) {
-          targetCard.className = `target-card ${latestResult.status}`;
-          targetCard.querySelector('.status').textContent = latestResult.status;
-          targetCard.querySelector('.response-time').textContent = 
-            latestResult.time ? `${latestResult.time} ms` : 'N/A';
-        }
+      } else {
+        // Still render the graph but with empty data
+        renderGraph(ip, []);
       }
     } catch (error) {
       console.error(`Error loading ping results for ${ip}:`, error);
@@ -460,40 +932,58 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderGraph(ip, results) {
     const graphId = `graph-${ip.replace(/\./g, '-')}`;
     let graphContainer = document.getElementById(graphId);
+    let isNewGraph = false;
+    let status = 'unknown';
+    
+    // Get latest status from results if available
+    if (results.length > 0) {
+      const latestResult = results[results.length - 1];
+      status = latestResult.status || 'unknown';
+    }
     
     if (!graphContainer) {
+      isNewGraph = true;
       graphContainer = document.createElement('div');
       graphContainer.id = graphId;
       graphContainer.className = 'graph-container';
+      graphContainer.style.opacity = 0;
       
       // Find matching target to get the name
       const targets = document.querySelectorAll('.target-card');
       let targetName = ip;
-      let status = 'unknown';
       
       // Try to find the target name from the DOM
       for (const target of targets) {
         const ipText = target.querySelector('p').textContent;
         if (ipText.includes(ip)) {
           targetName = target.querySelector('h3').textContent;
-          const statusSpan = target.querySelector('.status');
-          if (statusSpan) {
-            status = statusSpan.textContent;
-          }
           break;
         }
-      }
-      
-      // Get latest status from results if available
-      if (results.length > 0) {
-        const latestResult = results[results.length - 1];
-        status = latestResult.status || status;
       }
       
       graphContainer.innerHTML = `
         <div class="graph-header">
           <h3>${targetName} <span class="graph-details">(${ip}) - <span class="graph-status ${status}">${status}</span></span></h3>
-          <button class="remove-btn" data-ip="${ip}" title="Remove ${targetName} from monitoring">×</button>
+          <div class="dropdown">
+            <button class="dropdown-toggle" title="Options">
+              <div class="dots">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+              </div>
+            </button>
+            <div class="dropdown-menu">
+              <div class="dropdown-item" data-action="fullscreen" data-ip="${ip}">
+                <span class="icon">↗️</span> Full Screen
+              </div>
+              <div class="dropdown-item" data-action="reset" data-ip="${ip}">
+                <span class="icon">🔄</span> Reset Data
+              </div>
+              <div class="dropdown-item danger" data-action="remove" data-ip="${ip}">
+                <span class="icon">🗑️</span> Remove Host
+              </div>
+            </div>
+          </div>
         </div>
         <div class="chart-container">
           <canvas id="chart-${graphId}"></canvas>
@@ -502,17 +992,66 @@ document.addEventListener('DOMContentLoaded', () => {
       
       graphsContainer.appendChild(graphContainer);
       
-      // Add event listener to the remove button
-      const removeBtn = graphContainer.querySelector('.remove-btn');
-      removeBtn.addEventListener('click', () => removeTarget(ip));
+      // Animate the new graph
+      anime({
+        targets: graphContainer,
+        opacity: [0, 1],
+        translateY: [20, 0],
+        duration: 600,
+        delay: 100,
+        easing: 'easeOutCubic'
+      });
     } else {
       // Update the status if we have new results
       if (results.length > 0) {
         const latestResult = results[results.length - 1];
         const statusSpan = graphContainer.querySelector('.graph-status');
+        
         if (statusSpan && latestResult.status) {
-          statusSpan.textContent = latestResult.status;
-          statusSpan.className = `graph-status ${latestResult.status}`;
+          // Check if status has changed
+          if (statusSpan.textContent !== latestResult.status) {
+            // Animate status change
+            anime({
+              targets: statusSpan,
+              scale: [1, 1.2, 1],
+              duration: 500,
+              easing: 'easeInOutElastic(1, .6)'
+            });
+            
+            statusSpan.textContent = latestResult.status;
+            statusSpan.className = `graph-status ${latestResult.status}`;
+          }
+          
+          // Update the saved status
+          status = latestResult.status;
+        }
+      }
+      
+      // Apply pulse animation to chart container
+      const chartContainer = graphContainer.querySelector('.chart-container');
+      
+      // Remove any existing pulse classes
+      chartContainer.classList.remove('chart-pulse-green', 'chart-pulse-red');
+      
+      // Force a reflow to ensure animation runs again
+      void chartContainer.offsetWidth;
+      
+      // Add the appropriate pulse class based on status
+      if (status === 'green') {
+        chartContainer.classList.add('chart-pulse-green');
+      } else if (status === 'red') {
+        chartContainer.classList.add('chart-pulse-red');
+      }
+      
+      // If this graph is currently in fullscreen, update the fullscreen chart too
+      if (currentFullscreenGraph && currentFullscreenGraph.ip === ip) {
+        const fullscreenChart = document.getElementById('fullscreen-chart');
+        if (fullscreenChart && charts[ip]) {
+          const fsChart = new Chart(fullscreenChart.getContext('2d'), {
+            type: charts[ip].config.type,
+            data: JSON.parse(JSON.stringify(charts[ip].data)),
+            options: charts[ip].options
+          });
         }
       }
     }
@@ -540,32 +1079,173 @@ document.addEventListener('DOMContentLoaded', () => {
           datasets: [{
             label: 'Response Time (ms)',
             data: data,
-            borderColor: 'rgba(75, 192, 192, 1)',
-            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            borderColor: 'rgba(52, 152, 219, 1)',
+            backgroundColor: 'rgba(52, 152, 219, 0.2)',
             borderWidth: 2,
-            tension: 0.1
+            tension: 0.3,
+            pointRadius: 3,
+            pointHoverRadius: 5
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          animation: {
+            duration: 1000,
+            easing: 'easeOutQuart'
+          },
           scales: {
             y: {
               beginAtZero: true,
+              grid: {
+                color: 'rgba(255, 255, 255, 0.1)'
+              },
+              ticks: {
+                color: 'rgba(255, 255, 255, 0.7)'
+              },
               title: {
                 display: true,
-                text: 'Response Time (ms)'
+                text: 'Response Time (ms)',
+                color: 'rgba(255, 255, 255, 0.9)'
               }
             },
             x: {
+              grid: {
+                display: false
+              },
+              ticks: {
+                color: 'rgba(255, 255, 255, 0.7)'
+              },
               title: {
                 display: true,
-                text: 'Time'
+                text: 'Time',
+                color: 'rgba(255, 255, 255, 0.9)'
               }
             }
+          },
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              titleColor: 'rgba(255, 255, 255, 0.9)',
+              bodyColor: 'rgba(255, 255, 255, 0.9)',
+              padding: 10,
+              cornerRadius: 6,
+              caretSize: 6
+            },
+            noDataMessage: results.length === 0 ? {
+              id: 'noDataMessage',
+              beforeDraw: (chart) => {
+                if (chart.data.datasets[0].data.length === 0) {
+                  // No data available
+                  const ctx = chart.ctx;
+                  const width = chart.width;
+                  const height = chart.height;
+                  
+                  chart.clear();
+                  
+                  // Draw message
+                  ctx.save();
+                  ctx.textAlign = 'center';
+                  ctx.textBaseline = 'middle';
+                  ctx.font = '14px "Segoe UI", Roboto, Arial, sans-serif';
+                  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                  ctx.fillText('Waiting for ping data...', width / 2, height / 2);
+                  ctx.restore();
+                }
+              }
+            } : false
           }
         }
       });
     }
   }
+  
+  // Ping Timer element events
+  pingTimerValue.parentElement.addEventListener('click', async () => {
+    // Perform a manual refresh when clicking on the timer
+    try {
+      // Show a small animation to indicate refresh
+      anime({
+        targets: pingTimerValue,
+        scale: [1, 1.2, 1],
+        opacity: [1, 0.7, 1],
+        duration: 500,
+        easing: 'easeInOutElastic(1, .6)'
+      });
+      
+      // Call the ping endpoint
+      const response = await fetch('/api/ping', { method: 'POST' });
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Sync timer with server's ping cycle
+        if (data.pingStatus && data.pingStatus.secondsUntilNextPing !== undefined) {
+          nextPingIn = data.pingStatus.secondsUntilNextPing;
+          pingTimerValue.textContent = nextPingIn;
+        }
+        
+        // Show success notification
+        const notification = document.createElement('div');
+        notification.className = 'notification success';
+        notification.textContent = `Manually refreshed ${data.results.length} targets`;
+        document.body.appendChild(notification);
+        
+        anime({
+          targets: notification,
+          opacity: [0, 1],
+          translateY: [20, 0],
+          duration: 300,
+          easing: 'easeOutCubic',
+          complete: function() {
+            setTimeout(() => {
+              anime({
+                targets: notification,
+                opacity: 0,
+                translateY: -20,
+                duration: 300,
+                easing: 'easeOutCubic',
+                complete: function() {
+                  notification.remove();
+                }
+              });
+            }, 3000);
+          }
+        });
+        
+        // Refresh UI with new data
+        loadTargets();
+      }
+    } catch (error) {
+      console.error('Error performing manual refresh:', error);
+    }
+  });
+  
+  // Add CSS for notification
+  const style = document.createElement('style');
+  style.textContent = `
+    .notification {
+      position: fixed;
+      top: 70px;
+      right: 20px;
+      padding: 12px 20px;
+      background-color: var(--card-dark);
+      color: var(--text-dark);
+      border-radius: 6px;
+      box-shadow: var(--shadow-dark);
+      z-index: 100;
+      opacity: 0;
+    }
+    
+    .notification.success {
+      border-left: 4px solid var(--success-color);
+    }
+    
+    .notification.error {
+      border-left: 4px solid var(--danger-color);
+    }
+  `;
+  document.head.appendChild(style);
 }); 

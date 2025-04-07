@@ -5,6 +5,11 @@ const db = require('../db/database');
 // Ping interval in seconds
 const PING_INTERVAL = 60;
 
+// Track ping cycle timing
+let lastPingTime = null;
+let nextPingTime = null;
+let pingTask = null;
+
 // Ping a single target
 async function pingTarget(target) {
   console.log(`[${new Date().toISOString()}] Pinging ${target.name} (${target.ip})...`);
@@ -43,6 +48,11 @@ async function pingTarget(target) {
 // Ping all targets
 async function pingAllTargets() {
   try {
+    // Record the time of this ping cycle
+    lastPingTime = new Date();
+    // Calculate next ping time
+    nextPingTime = new Date(lastPingTime.getTime() + (PING_INTERVAL * 1000));
+    
     let targets = db.getTargets();
     
     // Extra safety check to ensure targets is an array
@@ -73,19 +83,45 @@ async function pingAllTargets() {
   }
 }
 
+// Get current ping cycle status
+function getPingStatus() {
+  const now = new Date();
+  
+  // Calculate seconds until next ping
+  let secondsUntilNextPing = PING_INTERVAL;
+  if (nextPingTime) {
+    secondsUntilNextPing = Math.max(0, Math.floor((nextPingTime - now) / 1000));
+  }
+  
+  return {
+    lastPingTime: lastPingTime ? lastPingTime.toISOString() : null,
+    nextPingTime: nextPingTime ? nextPingTime.toISOString() : null,
+    secondsUntilNextPing: secondsUntilNextPing,
+    pingInterval: PING_INTERVAL
+  };
+}
+
 // Start monitoring
 function startMonitoring() {
   // Run immediately on startup
   pingAllTargets();
   
   // Schedule regular pings
-  cron.schedule(`*/${PING_INTERVAL} * * * * *`, () => {
+  pingTask = cron.schedule(`*/${PING_INTERVAL} * * * * *`, () => {
     pingAllTargets();
   });
+  
+  // Set initial next ping time
+  if (!nextPingTime) {
+    lastPingTime = new Date();
+    nextPingTime = new Date(lastPingTime.getTime() + (PING_INTERVAL * 1000));
+  }
 }
 
 module.exports = {
   pingTarget,
   pingAllTargets,
-  startMonitoring
+  startMonitoring,
+  getPingStatus,
+  PING_INTERVAL
 }; 
