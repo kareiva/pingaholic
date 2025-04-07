@@ -11,6 +11,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const closePanelBtns = document.querySelectorAll('.close-panel');
   const targetsCounter = document.getElementById('targets-counter');
   const pingTimerValue = document.getElementById('ping-timer-value');
+  const headerRight = document.querySelector('.header-right');
+  
+  // Add turbo mode toggle to the header
+  if (headerRight) {
+    const turboModeContainer = document.createElement('div');
+    turboModeContainer.className = 'turbo-mode-container';
+    turboModeContainer.innerHTML = `
+      <input type="checkbox" id="turbo-mode-toggle" class="turbo-mode-checkbox">
+      <label for="turbo-mode-toggle" class="turbo-mode-label">Turbo Mode</label>
+    `;
+    headerRight.insertBefore(turboModeContainer, headerRight.firstChild);
+  }
+  
+  const turboModeToggle = document.getElementById('turbo-mode-toggle');
+  const turboModeContainer = document.querySelector('.turbo-mode-container');
   
   // Chart objects
   const charts = {};
@@ -18,8 +33,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentFullscreenGraph = null;
   
   // Timer variables
-  const PING_INTERVAL = 60; // in seconds (fallback value)
-  let nextPingIn = PING_INTERVAL;
+  const DEFAULT_PING_INTERVAL = 60; // in seconds
+  const TURBO_MODE_INTERVAL = 5; // in seconds
+  let isTurboMode = false;
+  let nextPingIn = DEFAULT_PING_INTERVAL;
   let pingTimer;
   
   // Animation settings
@@ -47,6 +64,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const pingTimerElement = document.querySelector('.ping-timer');
   if (pingTimerElement) {
     pingTimerElement.setAttribute('title', 'Click to refresh all targets manually');
+  }
+  
+  // Add title to turbo mode toggle
+  if (turboModeContainer) {
+    turboModeContainer.setAttribute('title', 'Toggle turbo mode (5-second ping intervals)');
+  }
+  
+  // Turbo mode event listener
+  if (turboModeToggle) {
+    turboModeToggle.addEventListener('change', handleTurboModeToggle);
   }
   
   // Start ping timer with server sync
@@ -78,6 +105,123 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
+  // Handle turbo mode toggle
+  async function handleTurboModeToggle() {
+    const isEnabled = turboModeToggle.checked;
+    
+    // Update UI immediately for responsiveness
+    if (isEnabled) {
+      turboModeContainer.classList.add('active');
+      
+      // Add pulsing indicator
+      if (!document.querySelector('.turbo-mode-active')) {
+        const turboIndicator = document.createElement('span');
+        turboIndicator.className = 'turbo-mode-active';
+        turboIndicator.textContent = '⚡';
+        turboModeContainer.appendChild(turboIndicator);
+      }
+    } else {
+      turboModeContainer.classList.remove('active');
+      
+      // Remove pulsing indicator
+      const turboIndicator = document.querySelector('.turbo-mode-active');
+      if (turboIndicator) {
+        turboIndicator.remove();
+      }
+    }
+    
+    try {
+      // Show visual feedback while API request is processing
+      anime({
+        targets: turboModeContainer,
+        scale: [1, 1.05, 1],
+        duration: 300,
+        easing: 'easeInOutQuad'
+      });
+      
+      // Send the toggle request to the server
+      const response = await fetch('/api/ping/turbo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          enabled: isEnabled
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Update local variables
+        isTurboMode = data.turboMode;
+        
+        // Update timer with new interval
+        if (data.pingStatus) {
+          nextPingIn = data.pingStatus.secondsUntilNextPing;
+          pingTimerValue.textContent = nextPingIn;
+          
+          // Clear existing timer and restart with new interval
+          if (pingTimer) {
+            clearInterval(pingTimer);
+          }
+          startPingTimer();
+        }
+        
+        // Add notification
+        const notification = document.createElement('div');
+        notification.className = 'notification ' + (isEnabled ? 'success' : 'info');
+        notification.textContent = `Turbo Mode ${isEnabled ? 'enabled' : 'disabled'}`;
+        if (isEnabled) {
+          notification.textContent += ' - Pinging every 5 seconds';
+        }
+        document.body.appendChild(notification);
+        
+        anime({
+          targets: notification,
+          opacity: [0, 1],
+          translateY: [20, 0],
+          duration: 300,
+          easing: 'easeOutCubic',
+          complete: function() {
+            setTimeout(() => {
+              anime({
+                targets: notification,
+                opacity: 0,
+                translateY: -20,
+                duration: 300,
+                easing: 'easeOutCubic',
+                complete: function() {
+                  notification.remove();
+                }
+              });
+            }, 3000);
+          }
+        });
+      } else {
+        // Revert UI if there was an error
+        turboModeToggle.checked = !isEnabled;
+        if (!isEnabled) {
+          turboModeContainer.classList.remove('active');
+          const turboIndicator = document.querySelector('.turbo-mode-active');
+          if (turboIndicator) turboIndicator.remove();
+        } else {
+          turboModeContainer.classList.add('active');
+          if (!document.querySelector('.turbo-mode-active')) {
+            const turboIndicator = document.createElement('span');
+            turboIndicator.className = 'turbo-mode-active';
+            turboIndicator.textContent = '⚡';
+            turboModeContainer.appendChild(turboIndicator);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling turbo mode:', error);
+      // Revert toggle state on error
+      turboModeToggle.checked = !isEnabled;
+    }
+  }
+  
   // Sync with server and start timer
   async function syncWithServerAndStartTimer() {
     try {
@@ -86,6 +230,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await response.json();
         // Use server's secondsUntilNextPing to sync our timer
         nextPingIn = data.secondsUntilNextPing;
+        
+        // Check if turbo mode is enabled on the server
+        if (data.turboMode !== undefined && turboModeToggle) {
+          isTurboMode = data.turboMode;
+          turboModeToggle.checked = data.turboMode;
+          
+          // Update UI for turbo mode
+          if (isTurboMode) {
+            turboModeContainer.classList.add('active');
+            if (!document.querySelector('.turbo-mode-active')) {
+              const turboIndicator = document.createElement('span');
+              turboIndicator.className = 'turbo-mode-active';
+              turboIndicator.textContent = '⚡';
+              turboModeContainer.appendChild(turboIndicator);
+            }
+          }
+        }
+        
         startPingTimer();
       } else {
         // Fall back to local timer if server sync fails
@@ -118,7 +280,8 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // When timer reaches 0, reset and trigger ping
       if (nextPingIn <= 0) {
-        nextPingIn = PING_INTERVAL;
+        // Reset based on current mode
+        nextPingIn = isTurboMode ? TURBO_MODE_INTERVAL : DEFAULT_PING_INTERVAL;
         pingTimerValue.textContent = nextPingIn;
         loadTargets();
       }
@@ -164,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (nextPingIn <= 1) {
       loadTargets();
     }
-  }, PING_INTERVAL * 1000);
+  }, isTurboMode ? TURBO_MODE_INTERVAL * 1000 : DEFAULT_PING_INTERVAL * 1000);
   
   // Add a global variable to track discovery state
   let isDiscoveryRunning = false;
@@ -753,7 +916,6 @@ document.addEventListener('DOMContentLoaded', () => {
             easing: 'easeOutQuart'
           },
           scales: {
-            ...chartConfig.options.scales,
             y: {
               ...chartConfig.options.scales.y,
               ticks: {
@@ -763,7 +925,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
               },
               title: {
-                ...chartConfig.options.scales.y.title,
+                display: true,
+                text: 'Response Time (ms)',
                 font: {
                   size: 16
                 }
@@ -774,11 +937,13 @@ document.addEventListener('DOMContentLoaded', () => {
               ticks: {
                 ...chartConfig.options.scales.x.ticks,
                 font: {
-                  size: 14
-                }
+                  size: 12
+                },
+                maxTicksLimit: 15 // Show more ticks in fullscreen mode
               },
               title: {
-                ...chartConfig.options.scales.x.title,
+                display: true,
+                text: 'Time',
                 font: {
                   size: 16
                 }
@@ -1061,10 +1226,25 @@ document.addEventListener('DOMContentLoaded', () => {
     // Prepare data for the chart
     const labels = results.map(result => {
       const date = new Date(result.timestamp);
-      return date.toLocaleTimeString();
+      // Use a more compact time format (HH:MM or HH:MM:SS based on data density)
+      return formatTimeCompact(date, results.length);
     });
     
     const data = results.map(result => result.time || null);
+    
+    // Helper function to format time in a compact way
+    function formatTimeCompact(date, totalPoints) {
+      // If we have many data points, show even more compact time (just hours:minutes)
+      if (totalPoints > 20) {
+        return date.getHours().toString().padStart(2, '0') + ':' + 
+               date.getMinutes().toString().padStart(2, '0');
+      } else {
+        // For fewer points, include seconds but still formatted compactly
+        return date.getHours().toString().padStart(2, '0') + ':' + 
+               date.getMinutes().toString().padStart(2, '0') + ':' + 
+               date.getSeconds().toString().padStart(2, '0');
+      }
+    }
     
     // Create or update chart
     if (charts[ip]) {
@@ -1105,8 +1285,15 @@ document.addEventListener('DOMContentLoaded', () => {
               },
               title: {
                 display: true,
-                text: 'Response Time (ms)',
-                color: 'rgba(255, 255, 255, 0.9)'
+                text: 'ms',
+                color: 'rgba(255, 255, 255, 0.9)',
+                font: {
+                  size: 12
+                },
+                padding: {
+                  top: 0,
+                  bottom: 4
+                }
               }
             },
             x: {
@@ -1114,13 +1301,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 display: false
               },
               ticks: {
-                color: 'rgba(255, 255, 255, 0.7)'
+                color: 'rgba(255, 255, 255, 0.7)',
+                font: {
+                  size: 10
+                },
+                maxRotation: 0,
+                autoSkip: true,
+                maxTicksLimit: 8, // Limit the number of visible ticks
               },
               title: {
-                display: true,
-                text: 'Time',
-                color: 'rgba(255, 255, 255, 0.9)'
-              }
+                display: false // Remove the title to save space
+              },
+              offset: true // Align axix labels with data points
             }
           },
           plugins: {
@@ -1133,7 +1325,15 @@ document.addEventListener('DOMContentLoaded', () => {
               bodyColor: 'rgba(255, 255, 255, 0.9)',
               padding: 10,
               cornerRadius: 6,
-              caretSize: 6
+              caretSize: 6,
+              callbacks: {
+                title: function(tooltipItems) {
+                  // Show the full date and time in the tooltip
+                  const timestamp = results[tooltipItems[0].dataIndex].timestamp;
+                  const date = new Date(timestamp);
+                  return date.toLocaleTimeString() + ' - ' + date.toLocaleDateString();
+                }
+              }
             },
             noDataMessage: results.length === 0 ? {
               id: 'noDataMessage',
@@ -1222,30 +1422,4 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Error performing manual refresh:', error);
     }
   });
-  
-  // Add CSS for notification
-  const style = document.createElement('style');
-  style.textContent = `
-    .notification {
-      position: fixed;
-      top: 70px;
-      right: 20px;
-      padding: 12px 20px;
-      background-color: var(--card-dark);
-      color: var(--text-dark);
-      border-radius: 6px;
-      box-shadow: var(--shadow-dark);
-      z-index: 100;
-      opacity: 0;
-    }
-    
-    .notification.success {
-      border-left: 4px solid var(--success-color);
-    }
-    
-    .notification.error {
-      border-left: 4px solid var(--danger-color);
-    }
-  `;
-  document.head.appendChild(style);
 }); 

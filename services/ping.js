@@ -3,7 +3,9 @@ const cron = require('node-cron');
 const db = require('../db/database');
 
 // Ping interval in seconds
-const PING_INTERVAL = 60;
+const DEFAULT_PING_INTERVAL = 60;
+let PING_INTERVAL = DEFAULT_PING_INTERVAL;
+let isTurboMode = false;
 
 // Track ping cycle timing
 let lastPingTime = null;
@@ -97,8 +99,43 @@ function getPingStatus() {
     lastPingTime: lastPingTime ? lastPingTime.toISOString() : null,
     nextPingTime: nextPingTime ? nextPingTime.toISOString() : null,
     secondsUntilNextPing: secondsUntilNextPing,
-    pingInterval: PING_INTERVAL
+    pingInterval: PING_INTERVAL,
+    turboMode: isTurboMode
   };
+}
+
+// Set turbo mode on or off
+function setTurboMode(enabled, interval = 5) {
+  if (enabled === isTurboMode) {
+    // No change needed if already in the requested state
+    return;
+  }
+  
+  isTurboMode = enabled;
+  
+  // Set the appropriate interval
+  PING_INTERVAL = enabled ? interval : DEFAULT_PING_INTERVAL;
+  
+  console.log(`[${new Date().toISOString()}] ${enabled ? 'Enabling' : 'Disabling'} turbo mode with interval ${PING_INTERVAL}s`);
+  
+  // Stop the existing cron job
+  if (pingTask) {
+    pingTask.stop();
+  }
+  
+  // Reschedule with the new interval
+  pingTask = cron.schedule(`*/${PING_INTERVAL} * * * * *`, () => {
+    pingAllTargets();
+  });
+  
+  // Reset the next ping time based on new interval
+  lastPingTime = new Date();
+  nextPingTime = new Date(lastPingTime.getTime() + (PING_INTERVAL * 1000));
+  
+  // Optional: Run a ping immediately when enabling turbo mode
+  if (enabled) {
+    pingAllTargets();
+  }
 }
 
 // Start monitoring
@@ -123,5 +160,6 @@ module.exports = {
   pingAllTargets,
   startMonitoring,
   getPingStatus,
-  PING_INTERVAL
+  setTurboMode,
+  PING_INTERVAL: DEFAULT_PING_INTERVAL
 }; 

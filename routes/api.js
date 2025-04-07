@@ -10,6 +10,10 @@ const fs = require('fs');
 
 // Add a global variable to track discovery state on the server
 let isDiscoveryRunning = false;
+// Track turbo mode state
+let turboModeEnabled = false;
+// Default ping interval is 60 seconds, turbo mode is 5 seconds
+const TURBO_MODE_INTERVAL = 5;
 
 // Get all targets
 router.get('/targets', (req, res) => {
@@ -290,9 +294,44 @@ router.post('/debug/reset-database', (req, res) => {
 router.get('/ping/status', (req, res) => {
   try {
     const pingStatus = pingService.getPingStatus();
+    // Add turbo mode status to the response
+    pingStatus.turboMode = turboModeEnabled;
     res.json(pingStatus);
   } catch (error) {
     console.error('Error getting ping status:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Toggle turbo mode
+router.post('/ping/turbo', (req, res) => {
+  try {
+    // Get the requested state from the body
+    const { enabled } = req.body;
+    
+    // Only update if the state is changing
+    if (turboModeEnabled !== enabled) {
+      console.log(`[${new Date().toISOString()}] ${enabled ? 'Enabling' : 'Disabling'} turbo mode`);
+      turboModeEnabled = enabled;
+      
+      // Update the ping service interval
+      if (turboModeEnabled) {
+        pingService.setTurboMode(true, TURBO_MODE_INTERVAL);
+      } else {
+        pingService.setTurboMode(false);
+      }
+    }
+    
+    // Get the updated ping status
+    const pingStatus = pingService.getPingStatus();
+    
+    res.json({
+      success: true,
+      turboMode: turboModeEnabled,
+      pingStatus: pingStatus
+    });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error toggling turbo mode:`, error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
