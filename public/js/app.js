@@ -354,6 +354,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       
       if (response.ok) {
+        // Get the newly created target from response
+        const newTarget = await response.json();
+        
         ipInput.value = '';
         nameInput.value = '';
         closePanel(addTargetPanel);
@@ -362,10 +365,55 @@ document.addEventListener('DOMContentLoaded', () => {
         let currentCount = parseInt(targetsCounter.textContent) || 0;
         targetsCounter.textContent = currentCount + 1;
         
+        // Create initial status for the target (will be updated when we have real data)
+        const initializedTarget = {
+          ...newTarget,
+          status: 'unknown',
+          time: null
+        };
+        
+        // Instantly render the new target's graph
+        renderGraph(initializedTarget.ip, [], initializedTarget.name);
+        
+        // Find the new graph element
+        const graphId = `graph-${initializedTarget.ip.replace(/\./g, '-')}`;
+        const graphElement = document.getElementById(graphId);
+        
+        // Scroll to the new graph with smooth animation
+        if (graphElement) {
+          // Add highlight effect to new target
+          graphElement.classList.add('new-target');
+          
+          // Scroll to the new graph with a small delay to ensure rendering is complete
+          setTimeout(() => {
+            graphElement.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'center' 
+            });
+            
+            // Highlight effect
+            anime({
+              targets: graphElement,
+              boxShadow: [
+                '0 0 0px rgba(52, 152, 219, 0)',
+                '0 0 20px rgba(52, 152, 219, 0.8)',
+                '0 0 0px rgba(52, 152, 219, 0)'
+              ],
+              duration: 2000,
+              easing: 'easeOutCubic'
+            });
+            
+            // Remove highlight class after animation
+            setTimeout(() => {
+              graphElement.classList.remove('new-target');
+            }, 2000);
+          }, 100);
+        }
+        
         // Animate success notification
         const notification = document.createElement('div');
         notification.className = 'notification success';
-        notification.textContent = `Target "${target.name}" added successfully`;
+        notification.textContent = `Target "${initializedTarget.name}" added successfully`;
         document.body.appendChild(notification);
         
         anime({
@@ -390,26 +438,32 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         });
         
-        // Trigger a ping for this target immediately
-        const pingResponse = await fetch('/api/ping', { method: 'POST' });
-        if (pingResponse.ok) {
-          const pingData = await pingResponse.json();
-          
-          // Sync timer with server's ping cycle
-          if (pingData.pingStatus && pingData.pingStatus.secondsUntilNextPing !== undefined) {
-            nextPingIn = pingData.pingStatus.secondsUntilNextPing;
-            pingTimerValue.textContent = nextPingIn;
+        // Trigger a ping for this target immediately to get data
+        try {
+          const pingResponse = await fetch('/api/ping', { method: 'POST' });
+          if (pingResponse.ok) {
+            const pingData = await pingResponse.json();
+            
+            // Sync timer with server's ping cycle
+            if (pingData.pingStatus && pingData.pingStatus.secondsUntilNextPing !== undefined) {
+              nextPingIn = pingData.pingStatus.secondsUntilNextPing;
+              pingTimerValue.textContent = nextPingIn;
+            }
+            
+            // Update the chart with fresh data
+            const resultsResponse = await fetch(`/api/results/${initializedTarget.ip}?limit=100`);
+            const results = await resultsResponse.json();
+            
+            if (results.length > 0) {
+              renderGraph(initializedTarget.ip, results, initializedTarget.name);
+            }
           }
-          
-          // Load targets with the fresh data
-          loadTargets();
-        } else {
-          // Just load targets if ping fails
-          loadTargets();
+        } catch (error) {
+          console.error('Error pinging new target:', error);
         }
       } else {
         const error = await response.json();
-        alert(`Error: ${error.message || 'Failed to add target'}`);
+        alert(`Error: ${error.error || 'Failed to add target'}`);
       }
     } catch (error) {
       console.error('Error adding target:', error);
@@ -725,43 +779,11 @@ document.addEventListener('DOMContentLoaded', () => {
       // Render the targets list first
       renderTargets(targets);
       
-      // Fetch and process ping results for each target
+      // Iterate over each target and load its ping results
       for (const target of targets) {
         try {
-          // First try to get the latest ping results for each target
-          const resultsResponse = await fetch(`/api/results/${target.ip}?limit=1`);
-          if (resultsResponse.ok) {
-            const latestResults = await resultsResponse.json();
-            
-            // If we have at least one result, update the target status immediately
-            if (latestResults.length > 0) {
-              const latestResult = latestResults[0];
-              
-              // Update the target card status with the latest result
-              // Use a better selector to find the target card by IP address
-              const targetCards = document.querySelectorAll('.target-card');
-              for (const card of targetCards) {
-                const ipText = card.querySelector('p').textContent;
-                if (ipText.includes(target.ip)) {
-                  const statusElement = card.querySelector('.status');
-                  const responseTimeElement = card.querySelector('.response-time');
-                  
-                  if (statusElement) {
-                    statusElement.textContent = latestResult.status || 'Unknown';
-                    card.className = `target-card ${latestResult.status || 'unknown'}`;
-                  }
-                  
-                  if (responseTimeElement) {
-                    responseTimeElement.textContent = latestResult.time ? `${latestResult.time} ms` : 'N/A';
-                  }
-                  break;
-                }
-              }
-            }
-          }
-          
           // Now load all ping results for the graph
-          loadPingResults(target.ip);
+          loadPingResults(target.ip, target.name);
         } catch (error) {
           console.error(`Error processing ping results for ${target.ip}:`, error);
         }
@@ -1077,16 +1099,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   // Load ping results for a target
-  async function loadPingResults(ip) {
+  async function loadPingResults(ip, targetName) {
     try {
       const response = await fetch(`/api/results/${ip}?limit=100`);
       const results = await response.json();
       
       if (results.length > 0) {
-        renderGraph(ip, results);
+        renderGraph(ip, results, targetName);
       } else {
         // Still render the graph but with empty data
-        renderGraph(ip, []);
+        renderGraph(ip, [], targetName);
       }
     } catch (error) {
       console.error(`Error loading ping results for ${ip}:`, error);
@@ -1094,7 +1116,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   // Render a graph for a target
-  function renderGraph(ip, results) {
+  function renderGraph(ip, results, targetName) {
     const graphId = `graph-${ip.replace(/\./g, '-')}`;
     let graphContainer = document.getElementById(graphId);
     let isNewGraph = false;
@@ -1113,22 +1135,51 @@ document.addEventListener('DOMContentLoaded', () => {
       graphContainer.className = 'graph-container';
       graphContainer.style.opacity = 0;
       
-      // Find matching target to get the name
-      const targets = document.querySelectorAll('.target-card');
-      let targetName = ip;
+      // Use the provided name or find a target name for this IP
+      let displayName = targetName || ip;
       
-      // Try to find the target name from the DOM
-      for (const target of targets) {
-        const ipText = target.querySelector('p').textContent;
-        if (ipText.includes(ip)) {
-          targetName = target.querySelector('h3').textContent;
-          break;
+      // If no name was provided, look it up
+      if (!targetName) {
+        // Method 1: Check targets already in DOM
+        const targetCards = document.querySelectorAll('.target-card');
+        for (const card of targetCards) {
+          const ipText = card.querySelector('p').textContent;
+          if (ipText.includes(ip)) {
+            displayName = card.querySelector('h3').textContent;
+            break;
+          }
+        }
+        
+        // Method 2: If still not found, fetch from API
+        if (displayName === ip) {
+          // Try to fetch the target info from API
+          fetch(`/api/targets`)
+            .then(response => response.json())
+            .then(targets => {
+              const targetInfo = targets.find(t => t.ip === ip);
+              if (targetInfo && targetInfo.name) {
+                const headerElement = graphContainer.querySelector('h3');
+                if (headerElement) {
+                  // Extract the status span if it exists
+                  const statusSpan = headerElement.querySelector('.graph-status');
+                  // Update the header with the correct name
+                  headerElement.innerHTML = `${targetInfo.name} <span class="graph-details">(${ip}) - `;
+                  // Re-add the status span if it was there
+                  if (statusSpan) {
+                    headerElement.querySelector('.graph-details').appendChild(statusSpan);
+                  } else {
+                    headerElement.querySelector('.graph-details').innerHTML += `<span class="graph-status ${status}">${status}</span></span>`;
+                  }
+                }
+              }
+            })
+            .catch(error => console.error('Error fetching target name:', error));
         }
       }
       
       graphContainer.innerHTML = `
         <div class="graph-header">
-          <h3>${targetName} <span class="graph-details">(${ip}) - <span class="graph-status ${status}">${status}</span></span></h3>
+          <h3>${displayName} <span class="graph-details">(${ip}) - <span class="graph-status ${status}">${status}</span></span></h3>
           <div class="dropdown">
             <button class="dropdown-toggle" title="Options">
               <div class="dots">

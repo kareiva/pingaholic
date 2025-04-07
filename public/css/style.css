@@ -1278,6 +1278,13 @@ input:focus {
   border-radius: var(--border-radius);
 }
 
+/* Highlight for newly added targets */
+.new-target {
+  position: relative;
+  z-index: 2;
+  transition: box-shadow 0.5s ease;
+}
+
 /* Notification styling */
 .notification {
   position: fixed;
