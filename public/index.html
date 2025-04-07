@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Network Monitor</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Network Monitor</h1>
+    </header>
+    
+    <div class="controls">
+      <div class="add-target">
+        <h2>Add Target</h2>
+        <form id="add-target-form">
+          <input type="text" id="target-ip" placeholder="IP Address" required>
+          <input type="text" id="target-name" placeholder="Name (optional)">
+          <button type="submit">Add Target</button>
+        </form>
+      </div>
+      
+      <div class="discover-hosts">
+        <h2>Discover Hosts</h2>
+        <form id="discover-form">
+          <input type="text" id="network-range" placeholder="Network Range (e.g., 192.168.1.0/24)" required>
+          <button type="submit">Discover</button>
+        </form>
+      </div>
+    </div>
+    
+    <div class="targets-container">
+      <h2>Monitored Targets</h2>
+      <div id="targets-list" class="targets-list"></div>
+    </div>
+    
+    <div class="graphs-container">
+      <h2>Response Time Graphs</h2>
+      <div id="graphs" class="graphs"></div>
+    </div>
+  </div>
+  
+  <script src="js/app.js"></script>
+</body>
+</html> 
