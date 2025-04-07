@@ -1,14 +1,26 @@
 document.addEventListener('DOMContentLoaded', () => {
+  // Check if Chart.js is loaded properly
+  if (typeof Chart === 'undefined') {
+    console.error('Chart.js is not loaded properly. Some features may not work.');
+    alert('Error loading Chart.js. Please refresh the page or check your connection.');
+  }
+
+  // Global variables and constants
+  let isDiscoveryRunning = false;
+  let nextPingIn = 0;
+  const DEFAULT_PING_INTERVAL = 60; // seconds
+  const TURBO_MODE_INTERVAL = 5; // seconds
+  let isTurboMode = false;
+  
+  // Sort state
+  let currentSortMethod = 'ip'; // 'ip', 'name', or 'status'
+  let currentSortDirection = 'asc'; // 'asc' or 'desc'
+  
   // DOM elements
   const addTargetForm = document.getElementById('add-target-form');
   const discoverForm = document.getElementById('discover-form');
   const targetsList = document.getElementById('targets-list');
   const graphsContainer = document.getElementById('graphs');
-  const addTargetPanel = document.getElementById('add-target-panel');
-  const discoverPanel = document.getElementById('discover-panel');
-  const addNewTargetBtn = document.getElementById('add-new-target');
-  const discoverNetworkBtn = document.getElementById('discover-network');
-  const closePanelBtns = document.querySelectorAll('.close-panel');
   const targetsCounter = document.getElementById('targets-counter');
   const pingTimerValue = document.getElementById('ping-timer-value');
   const headerRight = document.querySelector('.header-right');
@@ -21,7 +33,12 @@ document.addEventListener('DOMContentLoaded', () => {
       <input type="checkbox" id="turbo-mode-toggle" class="turbo-mode-checkbox">
       <label for="turbo-mode-toggle" class="turbo-mode-label">Turbo Mode</label>
     `;
-    headerRight.insertBefore(turboModeContainer, headerRight.firstChild);
+    const firstForm = headerRight.querySelector('form');
+    if (firstForm) {
+      headerRight.insertBefore(turboModeContainer, firstForm);
+    } else {
+      headerRight.appendChild(turboModeContainer);
+    }
   }
   
   const turboModeToggle = document.getElementById('turbo-mode-toggle');
@@ -33,10 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentFullscreenGraph = null;
   
   // Timer variables
-  const DEFAULT_PING_INTERVAL = 60; // in seconds
-  const TURBO_MODE_INTERVAL = 5; // in seconds
-  let isTurboMode = false;
-  let nextPingIn = DEFAULT_PING_INTERVAL;
   let pingTimer;
   
   // Animation settings
@@ -83,143 +96,73 @@ document.addEventListener('DOMContentLoaded', () => {
   loadTargets();
   
   // Event listeners
-  addTargetForm.addEventListener('submit', handleAddTarget);
-  discoverForm.addEventListener('submit', handleDiscoverHosts);
+  if (addTargetForm) {
+    addTargetForm.addEventListener('submit', handleAddTarget);
+  }
   
-  // Panel toggle buttons
-  addNewTargetBtn.addEventListener('click', () => {
-    togglePanel(addTargetPanel);
-    closePanel(discoverPanel);
-  });
+  if (discoverForm) {
+    discoverForm.addEventListener('submit', handleDiscoverHosts);
+  }
   
-  discoverNetworkBtn.addEventListener('click', () => {
-    togglePanel(discoverPanel);
-    closePanel(addTargetPanel);
-  });
-  
-  // Close panel buttons
-  closePanelBtns.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const panel = e.target.closest('.dashboard-panel');
-      closePanel(panel);
-    });
-  });
-  
-  // Handle turbo mode toggle
-  async function handleTurboModeToggle() {
-    const isEnabled = turboModeToggle.checked;
-    
-    // Update UI immediately for responsiveness
-    if (isEnabled) {
-      turboModeContainer.classList.add('active');
-      
-      // Add pulsing indicator
-      if (!document.querySelector('.turbo-mode-active')) {
-        const turboIndicator = document.createElement('span');
-        turboIndicator.className = 'turbo-mode-active';
-        turboIndicator.textContent = '⚡';
-        turboModeContainer.appendChild(turboIndicator);
-      }
-    } else {
-      turboModeContainer.classList.remove('active');
-      
-      // Remove pulsing indicator
-      const turboIndicator = document.querySelector('.turbo-mode-active');
-      if (turboIndicator) {
-        turboIndicator.remove();
-      }
-    }
-    
-    try {
-      // Show visual feedback while API request is processing
+  // Add click event for ping timer to allow manual refresh
+  if (pingTimerElement) {
+    pingTimerElement.addEventListener('click', async () => {
+      // Show a small animation to indicate refresh
       anime({
-        targets: turboModeContainer,
-        scale: [1, 1.05, 1],
-        duration: 300,
-        easing: 'easeInOutQuad'
+        targets: pingTimerValue,
+        scale: [1, 1.2, 1],
+        opacity: [1, 0.7, 1],
+        duration: 500,
+        easing: 'easeInOutElastic(1, .6)'
       });
       
-      // Send the toggle request to the server
-      const response = await fetch('/api/ping/turbo', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          enabled: isEnabled
-        })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Update local variables
-        isTurboMode = data.turboMode;
-        
-        // Update timer with new interval
-        if (data.pingStatus) {
-          nextPingIn = data.pingStatus.secondsUntilNextPing;
-          pingTimerValue.textContent = nextPingIn;
+      try {
+        // Call the ping endpoint
+        const response = await fetch('/api/ping', { method: 'POST' });
+        if (response.ok) {
+          const data = await response.json();
           
-          // Clear existing timer and restart with new interval
-          if (pingTimer) {
-            clearInterval(pingTimer);
+          // Sync timer with server's ping cycle
+          if (data.pingStatus && data.pingStatus.secondsUntilNextPing !== undefined) {
+            nextPingIn = data.pingStatus.secondsUntilNextPing;
+            pingTimerValue.textContent = nextPingIn;
           }
-          startPingTimer();
+          
+          // Show success notification
+          const notification = document.createElement('div');
+          notification.className = 'notification success';
+          notification.textContent = `Manually refreshed ${data.results.length} targets`;
+          document.body.appendChild(notification);
+          
+          anime({
+            targets: notification,
+            opacity: [0, 1],
+            translateY: [20, 0],
+            duration: 300,
+            easing: 'easeOutCubic',
+            complete: function() {
+              setTimeout(() => {
+                anime({
+                  targets: notification,
+                  opacity: 0,
+                  translateY: -20,
+                  duration: 300,
+                  easing: 'easeOutCubic',
+                  complete: function() {
+                    notification.remove();
+                  }
+                });
+              }, 3000);
+            }
+          });
+          
+          // Refresh UI with new data
+          loadTargets();
         }
-        
-        // Add notification
-        const notification = document.createElement('div');
-        notification.className = 'notification ' + (isEnabled ? 'success' : 'info');
-        notification.textContent = `Turbo Mode ${isEnabled ? 'enabled' : 'disabled'}`;
-        if (isEnabled) {
-          notification.textContent += ' - Pinging every 5 seconds';
-        }
-        document.body.appendChild(notification);
-        
-        anime({
-          targets: notification,
-          opacity: [0, 1],
-          translateY: [20, 0],
-          duration: 300,
-          easing: 'easeOutCubic',
-          complete: function() {
-            setTimeout(() => {
-              anime({
-                targets: notification,
-                opacity: 0,
-                translateY: -20,
-                duration: 300,
-                easing: 'easeOutCubic',
-                complete: function() {
-                  notification.remove();
-                }
-              });
-            }, 3000);
-          }
-        });
-      } else {
-        // Revert UI if there was an error
-        turboModeToggle.checked = !isEnabled;
-        if (!isEnabled) {
-          turboModeContainer.classList.remove('active');
-          const turboIndicator = document.querySelector('.turbo-mode-active');
-          if (turboIndicator) turboIndicator.remove();
-        } else {
-          turboModeContainer.classList.add('active');
-          if (!document.querySelector('.turbo-mode-active')) {
-            const turboIndicator = document.createElement('span');
-            turboIndicator.className = 'turbo-mode-active';
-            turboIndicator.textContent = '⚡';
-            turboModeContainer.appendChild(turboIndicator);
-          }
-        }
+      } catch (error) {
+        console.error('Error performing manual refresh:', error);
       }
-    } catch (error) {
-      console.error('Error toggling turbo mode:', error);
-      // Revert toggle state on error
-      turboModeToggle.checked = !isEnabled;
-    }
+    });
   }
   
   // Sync with server and start timer
@@ -228,8 +171,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const response = await fetch('/api/ping/status');
       if (response.ok) {
         const data = await response.json();
-        // Use server's secondsUntilNextPing to sync our timer
-        nextPingIn = data.secondsUntilNextPing;
         
         // Check if turbo mode is enabled on the server
         if (data.turboMode !== undefined && turboModeToggle) {
@@ -248,6 +189,13 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
         
+        // Use server's secondsUntilNextPing to sync our timer, but enforce TURBO_MODE_INTERVAL if in turbo mode
+        if (isTurboMode && data.secondsUntilNextPing > TURBO_MODE_INTERVAL) {
+          nextPingIn = TURBO_MODE_INTERVAL;
+        } else {
+          nextPingIn = data.secondsUntilNextPing;
+        }
+        
         startPingTimer();
       } else {
         // Fall back to local timer if server sync fails
@@ -258,16 +206,21 @@ document.addEventListener('DOMContentLoaded', () => {
       // Fall back to local timer
       startPingTimer();
     }
-    
-    // Re-sync with server every 5 minutes to prevent drift
-    setInterval(syncWithServerAndStartTimer, 5 * 60 * 1000);
   }
+  
+  // Re-sync with server every 5 minutes to prevent drift
+  setInterval(syncWithServerAndStartTimer, 5 * 60 * 1000);
   
   // Start ping countdown timer
   function startPingTimer() {
     // Clear any existing timer
     if (pingTimer) {
       clearInterval(pingTimer);
+    }
+    
+    // If nextPingIn is 0 or not set properly, initialize it based on current mode
+    if (nextPingIn <= 0) {
+      nextPingIn = isTurboMode ? TURBO_MODE_INTERVAL : DEFAULT_PING_INTERVAL;
     }
     
     // Initialize timer value
@@ -288,56 +241,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 1000);
   }
   
-  // Panel functions
-  function togglePanel(panel) {
-    if (panel.classList.contains('active')) {
-      closePanel(panel);
-    } else {
-      openPanel(panel);
-    }
-  }
-  
-  function openPanel(panel) {
-    panel.classList.add('active');
-    anime({
-      targets: panel,
-      right: '20px',
-      opacity: 1,
-      duration: 400,
-      easing: 'easeOutCubic'
-    });
-  }
-  
-  function closePanel(panel) {
-    anime({
-      targets: panel,
-      right: -350,
-      opacity: 0,
-      duration: 400,
-      easing: 'easeOutCubic',
-      complete: function() {
-        panel.classList.remove('active');
-      }
-    });
-  }
-  
-  // Refresh data every 60 seconds (will be synced with server timer through nextPingIn)
-  setInterval(() => {
-    // Only load if the timer is close to zero to avoid double refresh
-    if (nextPingIn <= 1) {
-      loadTargets();
-    }
-  }, isTurboMode ? TURBO_MODE_INTERVAL * 1000 : DEFAULT_PING_INTERVAL * 1000);
-  
-  // Add a global variable to track discovery state
-  let isDiscoveryRunning = false;
-  
   // Add a new target
   async function handleAddTarget(e) {
     e.preventDefault();
     
     const ipInput = document.getElementById('target-ip');
     const nameInput = document.getElementById('target-name');
+    
+    // Validation - ensure IP is provided
+    if (!ipInput.value) {
+      alert('Please enter an IP address');
+      return;
+    }
     
     const target = {
       ip: ipInput.value,
@@ -357,9 +272,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Get the newly created target from response
         const newTarget = await response.json();
         
+        // Clear inputs
         ipInput.value = '';
         nameInput.value = '';
-        closePanel(addTargetPanel);
+        ipInput.focus();
         
         // Get current count and update
         let currentCount = parseInt(targetsCounter.textContent) || 0;
@@ -484,6 +400,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const networkRangeInput = document.getElementById('network-range');
     const networkRange = networkRangeInput.value;
     
+    // Validation - ensure network range is provided
+    if (!networkRange) {
+      alert('Please enter a network range (e.g. 192.168.1.0/24)');
+      return;
+    }
+    
     // Set discovery state to running
     isDiscoveryRunning = true;
     
@@ -526,6 +448,10 @@ document.addEventListener('DOMContentLoaded', () => {
         isDiscoveryRunning = false;
         return;
       }
+      
+      // Clear input value and reset focus
+      networkRangeInput.value = '';
+      networkRangeInput.focus();
       
       // Set up a reader to process the stream
       const reader = response.body.getReader();
@@ -600,9 +526,6 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (data.currentIp) {
         currentIp.textContent = data.currentIp;
-        
-        // Log every host scan
-        addScanLogEntry(data.currentIp, 'scanning');
       }
     }
   }
@@ -628,30 +551,6 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
       
       log.appendChild(logEntry);
-      log.scrollTop = log.scrollHeight; // Auto-scroll to bottom
-    }
-  }
-  
-  // Add a function to log scanning activity (not just found hosts)
-  function addScanLogEntry(ip, status) {
-    const log = document.getElementById('discovery-log');
-    
-    if (log) {
-      const logEntry = document.createElement('div');
-      logEntry.className = 'log-entry' + (status === 'found' ? ' found' : '');
-      logEntry.innerHTML = `
-        <span class="log-time">${new Date().toLocaleTimeString()}</span>
-        <span class="log-host">Scanning ${ip}</span>
-        <span class="log-status">${status === 'found' ? 'FOUND' : 'no response'}</span>
-      `;
-      
-      log.appendChild(logEntry);
-      
-      // Keep only the last 200 entries to prevent performance issues
-      while (log.children.length > 200) {
-        log.removeChild(log.firstChild);
-      }
-      
       log.scrollTop = log.scrollHeight; // Auto-scroll to bottom
     }
   }
@@ -767,29 +666,336 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   
-  // Load all targets and their data
-  async function loadTargets() {
+  // Helper function to sort targets
+  function sortTargets(targets, method = currentSortMethod, direction = currentSortDirection) {
+    currentSortMethod = method;
+    currentSortDirection = direction;
+    
+    return targets.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (method) {
+        case 'ip':
+          // Split IPs into octets and compare numerically
+          const aOctets = a.ip.split('.').map(Number);
+          const bOctets = b.ip.split('.').map(Number);
+          
+          for (let i = 0; i < 4; i++) {
+            if (aOctets[i] !== bOctets[i]) {
+              comparison = aOctets[i] - bOctets[i];
+              break;
+            }
+          }
+          break;
+          
+        case 'name':
+          // Compare target names (case-insensitive)
+          comparison = a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+          break;
+          
+        case 'status':
+          // Default to 'unknown' if status isn't available
+          const statusA = a.status || 'unknown';
+          const statusB = b.status || 'unknown';
+          
+          // Custom status order: green, unknown, red
+          const statusOrder = { 'green': 0, 'unknown': 1, 'red': 2 };
+          comparison = statusOrder[statusA] - statusOrder[statusB];
+          break;
+      }
+      
+      // Apply sort direction
+      return direction === 'asc' ? comparison : -comparison;
+    });
+  }
+  
+  // Add sort controls to the UI
+  function addSortControls() {
+    const graphsContainerHeader = document.querySelector('.graphs-container h2');
+    
+    if (!graphsContainerHeader) return;
+    
+    // Create sort controls if they don't exist yet
+    if (!document.querySelector('.sort-controls')) {
+      const sortControls = document.createElement('div');
+      sortControls.className = 'sort-controls';
+      
+      sortControls.innerHTML = `
+        <span class="sort-label">Sort by:</span>
+        <div class="sort-buttons">
+          <button class="sort-button active" data-sort="ip">IP Address</button>
+          <button class="sort-button" data-sort="name">Name</button>
+          <button class="sort-button" data-sort="status">Status</button>
+          <button class="sort-direction" title="Toggle sort direction">
+            <span class="sort-arrow">↑</span>
+          </button>
+        </div>
+      `;
+      
+      graphsContainerHeader.appendChild(sortControls);
+      
+      // Add event listeners to sort buttons
+      const sortButtons = document.querySelectorAll('.sort-button');
+      sortButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          // Remove active class from all buttons
+          sortButtons.forEach(btn => btn.classList.remove('active'));
+          // Add active class to clicked button
+          button.classList.add('active');
+          
+          // Sort targets and reload
+          const sortMethod = button.dataset.sort;
+          fetchAndSortTargets(sortMethod, currentSortDirection);
+        });
+      });
+      
+      // Add event listener to sort direction button
+      const directionButton = document.querySelector('.sort-direction');
+      directionButton.addEventListener('click', () => {
+        // Toggle direction
+        const newDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+        
+        // Update arrow indicator
+        const arrow = directionButton.querySelector('.sort-arrow');
+        arrow.textContent = newDirection === 'asc' ? '↑' : '↓';
+        
+        // Re-sort with new direction
+        fetchAndSortTargets(currentSortMethod, newDirection);
+      });
+    }
+  }
+  
+  // Fetch and sort targets
+  async function fetchAndSortTargets(method, direction) {
     try {
       const response = await fetch('/api/targets');
-      const targets = await response.json();
+      let targets = await response.json();
+      
+      // Show sorting banner
+      showSortingBanner(method, direction);
+      
+      // Sort based on specified method and direction
+      targets = sortTargets(targets, method, direction);
+      
+      // Store all existing charts to reuse them
+      const existingCharts = {...charts};
+      
+      // Clear graphs container
+      graphsContainer.innerHTML = '';
       
       // Update targets counter
       targetsCounter.textContent = targets.length;
       
-      // Render the targets list first
+      // Render the targets list
       renderTargets(targets);
       
-      // Iterate over each target and load its ping results
+      // Render the graphs for each target in the new sorted order
       for (const target of targets) {
         try {
-          // Now load all ping results for the graph
-          loadPingResults(target.ip, target.name);
+          // Fetch results for this target
+          const response = await fetch(`/api/results/${target.ip}?limit=100`);
+          const results = await response.json();
+          
+          // Create a graph with the fetched data
+          renderGraph(target.ip, results, target.name, existingCharts[target.ip]);
         } catch (error) {
           console.error(`Error processing ping results for ${target.ip}:`, error);
         }
       }
     } catch (error) {
+      console.error('Error loading and sorting targets:', error);
+    }
+  }
+  
+  // Show sorting banner
+  function showSortingBanner(method, direction) {
+    // Remove any existing banner
+    const existingBanner = document.querySelector('.sorting-banner');
+    if (existingBanner) {
+      existingBanner.remove();
+    }
+    
+    // Create a new banner
+    const banner = document.createElement('div');
+    banner.className = 'sorting-banner';
+    
+    // Set banner content based on method and direction
+    let methodText = '';
+    switch (method) {
+      case 'ip':
+        methodText = 'IP Address';
+        break;
+      case 'name':
+        methodText = 'Host Name';
+        break;
+      case 'status':
+        methodText = 'Status';
+        break;
+    }
+    
+    const directionText = direction === 'asc' ? 'ascending' : 'descending';
+    banner.innerHTML = `
+      <div class="banner-content">
+        <span class="banner-icon">🔄</span>
+        <span class="banner-text">Sorted by ${methodText} (${directionText})</span>
+      </div>
+    `;
+    
+    // Add to DOM
+    document.body.appendChild(banner);
+    
+    // Animate in
+    anime({
+      targets: banner,
+      opacity: [0, 1],
+      translateY: ['-100%', '0'],
+      duration: 400,
+      easing: 'easeOutCubic'
+    });
+    
+    // Auto-hide after a delay
+    setTimeout(() => {
+      anime({
+        targets: banner,
+        opacity: 0,
+        translateY: '-100%',
+        duration: 400,
+        easing: 'easeOutCubic',
+        complete: function() {
+          banner.remove();
+        }
+      });
+    }, 3000);
+  }
+  
+  // Update loadTargets to preserve charts when refreshing data
+  async function loadTargets() {
+    try {
+      const response = await fetch('/api/targets');
+      let targets = await response.json();
+      
+      // Sort targets using the current method and direction
+      targets = sortTargets(targets);
+      
+      // Update targets counter
+      targetsCounter.textContent = targets.length;
+      
+      // Only clear and rebuild graphs container if it's empty or this is a manual sort
+      const shouldRebuildGraphs = graphsContainer.children.length === 0;
+      
+      if (shouldRebuildGraphs) {
+        // Clear the graphs container to ensure proper sorting
+        graphsContainer.innerHTML = '';
+        
+        // Ensure sort controls are added
+        addSortControls();
+        
+        // Render the targets list first
+        renderTargets(targets);
+        
+        // Iterate over each target and load its ping results
+        for (const target of targets) {
+          try {
+            // Now load all ping results for the graph
+            loadPingResults(target.ip, target.name);
+          } catch (error) {
+            console.error(`Error processing ping results for ${target.ip}:`, error);
+          }
+        }
+      } else {
+        // Just update existing graphs with new data
+        for (const target of targets) {
+          try {
+            // Only update the data without rebuilding the entire graph
+            updateGraphData(target.ip, target.name);
+          } catch (error) {
+            console.error(`Error updating ping results for ${target.ip}:`, error);
+          }
+        }
+      }
+    } catch (error) {
       console.error('Error loading targets:', error);
+    }
+  }
+  
+  // Function to update the graph data without rebuilding the entire graph
+  async function updateGraphData(ip, targetName) {
+    try {
+      const response = await fetch(`/api/results/${ip}?limit=100`);
+      const results = await response.json();
+      
+      if (results.length > 0) {
+        // Only update data for the existing chart
+        updateChartData(ip, results);
+      }
+    } catch (error) {
+      console.error(`Error updating ping results for ${ip}:`, error);
+    }
+  }
+  
+  // Function to update just the chart data
+  function updateChartData(ip, results) {
+    // Check if the chart exists
+    if (charts[ip]) {
+      const chart = charts[ip];
+      
+      // Prepare data for the chart
+      const labels = results.map(result => {
+        const date = new Date(result.timestamp);
+        return formatTimeCompact(date, results.length);
+      });
+      
+      const data = results.map(result => result.time || null);
+      
+      // Get latest status
+      if (results.length > 0) {
+        const latestResult = results[results.length - 1];
+        const status = latestResult.status || 'unknown';
+        
+        // Update the status in the UI
+        const graphId = `graph-${ip.replace(/\./g, '-')}`;
+        const graphContainer = document.getElementById(graphId);
+        
+        if (graphContainer) {
+          const statusSpan = graphContainer.querySelector('.graph-status');
+          if (statusSpan && statusSpan.textContent !== status) {
+            // Animate status change
+            anime({
+              targets: statusSpan,
+              scale: [1, 1.2, 1],
+              duration: 500,
+              easing: 'easeInOutElastic(1, .6)'
+            });
+            
+            statusSpan.textContent = status;
+            statusSpan.className = `graph-status ${status}`;
+            
+            // Update dataset attribute for sorting
+            graphContainer.dataset.status = status;
+            
+            // Apply pulse animation to chart container
+            const chartContainer = graphContainer.querySelector('.chart-container');
+            
+            // Remove any existing pulse classes
+            chartContainer.classList.remove('chart-pulse-green', 'chart-pulse-red');
+            
+            // Force a reflow to ensure animation runs again
+            void chartContainer.offsetWidth;
+            
+            // Add the appropriate pulse class based on status
+            if (status === 'green') {
+              chartContainer.classList.add('chart-pulse-green');
+            } else if (status === 'red') {
+              chartContainer.classList.add('chart-pulse-red');
+            }
+          }
+        }
+      }
+      
+      // Update the chart data
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = data;
+      chart.update();
     }
   }
   
@@ -1104,11 +1310,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const response = await fetch(`/api/results/${ip}?limit=100`);
       const results = await response.json();
       
+      // Check if we already have a chart for this IP
+      const existingChart = charts[ip];
+      
       if (results.length > 0) {
-        renderGraph(ip, results, targetName);
+        renderGraph(ip, results, targetName, existingChart);
       } else {
         // Still render the graph but with empty data
-        renderGraph(ip, [], targetName);
+        renderGraph(ip, [], targetName, existingChart);
       }
     } catch (error) {
       console.error(`Error loading ping results for ${ip}:`, error);
@@ -1116,16 +1325,27 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   // Render a graph for a target
-  function renderGraph(ip, results, targetName) {
+  function renderGraph(ip, results, targetName, existingChart = null) {
     const graphId = `graph-${ip.replace(/\./g, '-')}`;
     let graphContainer = document.getElementById(graphId);
     let isNewGraph = false;
     let status = 'unknown';
+    let statusChanged = false;
     
     // Get latest status from results if available
     if (results.length > 0) {
       const latestResult = results[results.length - 1];
-      status = latestResult.status || 'unknown';
+      const newStatus = latestResult.status || 'unknown';
+      
+      // Check if status has changed
+      if (graphContainer) {
+        const currentStatusEl = graphContainer.querySelector('.graph-status');
+        if (currentStatusEl && currentStatusEl.textContent !== newStatus) {
+          statusChanged = true;
+        }
+      }
+      
+      status = newStatus;
     }
     
     if (!graphContainer) {
@@ -1134,6 +1354,8 @@ document.addEventListener('DOMContentLoaded', () => {
       graphContainer.id = graphId;
       graphContainer.className = 'graph-container';
       graphContainer.style.opacity = 0;
+      graphContainer.dataset.ip = ip;
+      graphContainer.dataset.status = status;
       
       // Use the provided name or find a target name for this IP
       let displayName = targetName || ip;
@@ -1220,12 +1442,11 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       // Update the status if we have new results
       if (results.length > 0) {
-        const latestResult = results[results.length - 1];
         const statusSpan = graphContainer.querySelector('.graph-status');
         
-        if (statusSpan && latestResult.status) {
+        if (statusSpan) {
           // Check if status has changed
-          if (statusSpan.textContent !== latestResult.status) {
+          if (statusSpan.textContent !== status) {
             // Animate status change
             anime({
               targets: statusSpan,
@@ -1234,12 +1455,18 @@ document.addEventListener('DOMContentLoaded', () => {
               easing: 'easeInOutElastic(1, .6)'
             });
             
-            statusSpan.textContent = latestResult.status;
-            statusSpan.className = `graph-status ${latestResult.status}`;
+            statusSpan.textContent = status;
+            statusSpan.className = `graph-status ${status}`;
+            
+            // Update dataset attribute for sorting
+            graphContainer.dataset.status = status;
+            
+            // If we're sorting by status, re-sort the graphs
+            if (currentSortMethod === 'status' && statusChanged) {
+              // Wait a little to allow the animation to complete
+              setTimeout(() => fetchAndSortTargets(currentSortMethod, currentSortDirection), 600);
+            }
           }
-          
-          // Update the saved status
-          status = latestResult.status;
         }
       }
       
@@ -1283,194 +1510,241 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const data = results.map(result => result.time || null);
     
-    // Helper function to format time in a compact way
-    function formatTimeCompact(date, totalPoints) {
-      // If we have many data points, show even more compact time (just hours:minutes)
-      if (totalPoints > 20) {
-        return date.getHours().toString().padStart(2, '0') + ':' + 
-               date.getMinutes().toString().padStart(2, '0');
-      } else {
-        // For fewer points, include seconds but still formatted compactly
-        return date.getHours().toString().padStart(2, '0') + ':' + 
-               date.getMinutes().toString().padStart(2, '0') + ':' + 
-               date.getSeconds().toString().padStart(2, '0');
-      }
-    }
+    // Use the createOrUpdateChart function with error handling
+    createOrUpdateChart(ip, chartCanvas, labels, data, existingChart);
+  }
+  
+  // Handle turbo mode toggle
+  async function handleTurboModeToggle() {
+    const isEnabled = turboModeToggle.checked;
     
-    // Create or update chart
-    if (charts[ip]) {
-      charts[ip].data.labels = labels;
-      charts[ip].data.datasets[0].data = data;
-      charts[ip].update();
-    } else {
-      charts[ip] = new Chart(chartCanvas, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Response Time (ms)',
-            data: data,
-            borderColor: 'rgba(52, 152, 219, 1)',
-            backgroundColor: 'rgba(52, 152, 219, 0.2)',
-            borderWidth: 2,
-            tension: 0.3,
-            pointRadius: 3,
-            pointHoverRadius: 5
-          }]
+    try {
+      const response = await fetch('/api/ping/turbo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
         },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: {
-            duration: 1000,
-            easing: 'easeOutQuart'
-          },
-          scales: {
-            y: {
-              beginAtZero: true,
-              grid: {
-                color: 'rgba(255, 255, 255, 0.1)'
-              },
-              ticks: {
-                color: 'rgba(255, 255, 255, 0.7)'
-              },
-              title: {
-                display: true,
-                text: 'ms',
-                color: 'rgba(255, 255, 255, 0.9)',
-                font: {
-                  size: 12
-                },
-                padding: {
-                  top: 0,
-                  bottom: 4
-                }
-              }
-            },
-            x: {
-              grid: {
-                display: false
-              },
-              ticks: {
-                color: 'rgba(255, 255, 255, 0.7)',
-                font: {
-                  size: 10
-                },
-                maxRotation: 0,
-                autoSkip: true,
-                maxTicksLimit: 8, // Limit the number of visible ticks
-              },
-              title: {
-                display: false // Remove the title to save space
-              },
-              offset: true // Align axix labels with data points
+        body: JSON.stringify({ enabled: isEnabled })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        isTurboMode = data.turboMode;
+        
+        // Immediately update the ping timer value based on turbo mode
+        nextPingIn = isTurboMode ? TURBO_MODE_INTERVAL : DEFAULT_PING_INTERVAL;
+        pingTimerValue.textContent = nextPingIn;
+        
+        // Update the UI to show turbo mode is active
+        if (turboModeContainer) {
+          if (isTurboMode) {
+            turboModeContainer.classList.add('active');
+            
+            if (!document.querySelector('.turbo-mode-active')) {
+              const turboIndicator = document.createElement('span');
+              turboIndicator.className = 'turbo-mode-active';
+              turboIndicator.textContent = '⚡';
+              turboModeContainer.appendChild(turboIndicator);
             }
-          },
-          plugins: {
-            legend: {
-              display: false
-            },
-            tooltip: {
-              backgroundColor: 'rgba(0, 0, 0, 0.7)',
-              titleColor: 'rgba(255, 255, 255, 0.9)',
-              bodyColor: 'rgba(255, 255, 255, 0.9)',
-              padding: 10,
-              cornerRadius: 6,
-              caretSize: 6,
-              callbacks: {
-                title: function(tooltipItems) {
-                  // Show the full date and time in the tooltip
-                  const timestamp = results[tooltipItems[0].dataIndex].timestamp;
-                  const date = new Date(timestamp);
-                  return date.toLocaleTimeString() + ' - ' + date.toLocaleDateString();
-                }
-              }
-            },
-            noDataMessage: results.length === 0 ? {
-              id: 'noDataMessage',
-              beforeDraw: (chart) => {
-                if (chart.data.datasets[0].data.length === 0) {
-                  // No data available
-                  const ctx = chart.ctx;
-                  const width = chart.width;
-                  const height = chart.height;
-                  
-                  chart.clear();
-                  
-                  // Draw message
-                  ctx.save();
-                  ctx.textAlign = 'center';
-                  ctx.textBaseline = 'middle';
-                  ctx.font = '14px "Segoe UI", Roboto, Arial, sans-serif';
-                  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-                  ctx.fillText('Waiting for ping data...', width / 2, height / 2);
-                  ctx.restore();
-                }
-              }
-            } : false
+          } else {
+            turboModeContainer.classList.remove('active');
+            const turboIndicator = document.querySelector('.turbo-mode-active');
+            if (turboIndicator) {
+              turboIndicator.remove();
+            }
           }
         }
-      });
+        
+        // Restart the timer with the updated interval
+        updateRefreshTimer();
+      }
+    } catch (error) {
+      console.error('Error toggling turbo mode:', error);
+      // Revert toggle state on error
+      turboModeToggle.checked = !isEnabled;
     }
   }
   
-  // Ping Timer element events
-  pingTimerValue.parentElement.addEventListener('click', async () => {
-    // Perform a manual refresh when clicking on the timer
-    try {
-      // Show a small animation to indicate refresh
-      anime({
-        targets: pingTimerValue,
-        scale: [1, 1.2, 1],
-        opacity: [1, 0.7, 1],
-        duration: 500,
-        easing: 'easeInOutElastic(1, .6)'
-      });
-      
-      // Call the ping endpoint
-      const response = await fetch('/api/ping', { method: 'POST' });
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Sync timer with server's ping cycle
-        if (data.pingStatus && data.pingStatus.secondsUntilNextPing !== undefined) {
-          nextPingIn = data.pingStatus.secondsUntilNextPing;
-          pingTimerValue.textContent = nextPingIn;
-        }
-        
-        // Show success notification
-        const notification = document.createElement('div');
-        notification.className = 'notification success';
-        notification.textContent = `Manually refreshed ${data.results.length} targets`;
-        document.body.appendChild(notification);
-        
-        anime({
-          targets: notification,
-          opacity: [0, 1],
-          translateY: [20, 0],
-          duration: 300,
-          easing: 'easeOutCubic',
-          complete: function() {
-            setTimeout(() => {
-              anime({
-                targets: notification,
-                opacity: 0,
-                translateY: -20,
-                duration: 300,
-                easing: 'easeOutCubic',
-                complete: function() {
-                  notification.remove();
-                }
-              });
-            }, 3000);
-          }
-        });
-        
-        // Refresh UI with new data
+  // Create a refresh timer that adapts to current mode
+  let refreshTimer;
+  
+  function updateRefreshTimer() {
+    // Clear any existing timer
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+    }
+    
+    // Set up new timer with correct interval
+    const interval = isTurboMode ? TURBO_MODE_INTERVAL * 1000 : DEFAULT_PING_INTERVAL * 1000;
+    
+    refreshTimer = setInterval(() => {
+      // Only load if the timer is close to zero to avoid double refresh
+      if (nextPingIn <= 1) {
+        // For debug
+        console.log('Auto-refreshing targets data');
         loadTargets();
       }
-    } catch (error) {
-      console.error('Error performing manual refresh:', error);
-    }
+    }, interval);
+  }
+  
+  // Initialize the refresh timer
+  updateRefreshTimer();
+  
+  // Update the timer when turbo mode changes
+  turboModeToggle.addEventListener('change', () => {
+    updateRefreshTimer();
   });
+
+  // Create or update chart - wrapped in try-catch to handle potential Chart.js errors
+  function createOrUpdateChart(ip, chartCanvas, labels, data, existingChart = null) {
+    try {
+      if (charts[ip]) {
+        charts[ip].data.labels = labels;
+        charts[ip].data.datasets[0].data = data;
+        charts[ip].update();
+      } else if (existingChart) {
+        // If we have an existing chart configuration, reuse it
+        const newChart = new Chart(chartCanvas, {
+          type: existingChart.config.type,
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Response Time (ms)',
+              data: data,
+              borderColor: existingChart.data.datasets[0].borderColor,
+              backgroundColor: existingChart.data.datasets[0].backgroundColor,
+              borderWidth: existingChart.data.datasets[0].borderWidth,
+              tension: existingChart.data.datasets[0].tension,
+              pointRadius: existingChart.data.datasets[0].pointRadius,
+              pointBackgroundColor: existingChart.data.datasets[0].pointBackgroundColor
+            }]
+          },
+          options: existingChart.config.options
+        });
+        
+        charts[ip] = newChart;
+      } else {
+        charts[ip] = new Chart(chartCanvas, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Response Time (ms)',
+              data: data,
+              borderColor: 'rgba(52, 152, 219, 1)',
+              backgroundColor: 'rgba(52, 152, 219, 0.2)',
+              borderWidth: 2,
+              tension: 0.3,
+              pointRadius: 3,
+              pointBackgroundColor: function(context) {
+                // Color points based on status (red = timeout/error, green = success)
+                const value = context.dataset.data[context.dataIndex];
+                return value === null ? 'rgba(231, 76, 60, 1)' : 'rgba(46, 204, 113, 1)';
+              }
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+              duration: 1000,
+              easing: 'easeOutQuart'
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                grid: {
+                  color: 'rgba(255, 255, 255, 0.05)'
+                },
+                border: {
+                  color: 'rgba(255, 255, 255, 0.1)'
+                },
+                ticks: {
+                  color: 'rgba(255, 255, 255, 0.7)',
+                  font: {
+                    size: 10
+                  }
+                }
+              },
+              x: {
+                grid: {
+                  color: 'rgba(255, 255, 255, 0.05)'
+                },
+                border: {
+                  color: 'rgba(255, 255, 255, 0.1)'
+                },
+                ticks: {
+                  color: 'rgba(255, 255, 255, 0.7)',
+                  maxTicksLimit: 8,
+                  maxRotation: 0,
+                  font: {
+                    size: 10
+                  }
+                }
+              }
+            },
+            plugins: {
+              legend: {
+                display: false
+              },
+              tooltip: {
+                mode: 'index',
+                intersect: false,
+                backgroundColor: 'rgba(45, 45, 45, 0.9)',
+                titleColor: 'rgba(255, 255, 255, 0.9)',
+                bodyColor: 'rgba(255, 255, 255, 0.8)',
+                borderColor: 'rgba(255, 255, 255, 0.2)',
+                borderWidth: 1,
+                callbacks: {
+                  label: function(context) {
+                    const value = context.parsed.y;
+                    return value === null ? 'Timeout/Error' : `${value} ms`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+      return true;
+    } catch (error) {
+      console.error(`Error creating/updating chart for ${ip}:`, error);
+      
+      // Create fallback display if needed
+      const chartContainer = chartCanvas.closest('.chart-container');
+      if (chartContainer) {
+        // Only add fallback if container exists and doesn't already have the fallback
+        if (!chartContainer.querySelector('.chart-fallback')) {
+          const fallback = document.createElement('div');
+          fallback.className = 'chart-fallback';
+          fallback.innerHTML = `
+            <div class="fallback-message">
+              <p>Chart rendering error. Please try refreshing the page.</p>
+              <p class="fallback-data">${data.length} data points collected</p>
+              <p class="fallback-status">Latest status: ${data.length > 0 ? (data[data.length-1] === null ? 'Error' : 'OK') : 'Unknown'}</p>
+            </div>
+          `;
+          chartContainer.appendChild(fallback);
+          
+          // Hide the canvas
+          chartCanvas.style.display = 'none';
+        }
+      }
+      return false;
+    }
+  }
+
+  // Helper function to format time in a compact way
+  function formatTimeCompact(date, totalPoints) {
+    // If we have many data points, show even more compact time (just hours:minutes)
+    if (totalPoints > 20) {
+      return date.getHours().toString().padStart(2, '0') + ':' + 
+             date.getMinutes().toString().padStart(2, '0');
+    } else {
+      // For fewer points, include seconds but still formatted compactly
+      return date.getHours().toString().padStart(2, '0') + ':' + 
+             date.getMinutes().toString().padStart(2, '0') + ':' + 
+             date.getSeconds().toString().padStart(2, '0');
+    }
+  }
 }); 
