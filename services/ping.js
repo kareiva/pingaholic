@@ -17,7 +17,6 @@ async function pingTarget(target) {
     
     const pingResult = {
       ip: target.ip,
-      name: target.name,
       alive: result.alive,
       time: result.time,
       status: result.alive ? 'green' : 'red'
@@ -34,7 +33,6 @@ async function pingTarget(target) {
     console.error(`[${new Date().toISOString()}] Error pinging ${target.ip}:`, error);
     return {
       ip: target.ip,
-      name: target.name,
       alive: false,
       time: null,
       status: 'red'

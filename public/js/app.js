@@ -466,16 +466,55 @@ document.addEventListener('DOMContentLoaded', () => {
       graphContainer.id = graphId;
       graphContainer.className = 'graph-container';
       
-      const targetName = results[0]?.name || ip;
+      // Find matching target to get the name
+      const targets = document.querySelectorAll('.target-card');
+      let targetName = ip;
+      let status = 'unknown';
+      
+      // Try to find the target name from the DOM
+      for (const target of targets) {
+        const ipText = target.querySelector('p').textContent;
+        if (ipText.includes(ip)) {
+          targetName = target.querySelector('h3').textContent;
+          const statusSpan = target.querySelector('.status');
+          if (statusSpan) {
+            status = statusSpan.textContent;
+          }
+          break;
+        }
+      }
+      
+      // Get latest status from results if available
+      if (results.length > 0) {
+        const latestResult = results[results.length - 1];
+        status = latestResult.status || status;
+      }
       
       graphContainer.innerHTML = `
-        <h3>${targetName}</h3>
+        <div class="graph-header">
+          <h3>${targetName} <span class="graph-details">(${ip}) - <span class="graph-status ${status}">${status}</span></span></h3>
+          <button class="remove-btn" data-ip="${ip}" title="Remove ${targetName} from monitoring">×</button>
+        </div>
         <div class="chart-container">
           <canvas id="chart-${graphId}"></canvas>
         </div>
       `;
       
       graphsContainer.appendChild(graphContainer);
+      
+      // Add event listener to the remove button
+      const removeBtn = graphContainer.querySelector('.remove-btn');
+      removeBtn.addEventListener('click', () => removeTarget(ip));
+    } else {
+      // Update the status if we have new results
+      if (results.length > 0) {
+        const latestResult = results[results.length - 1];
+        const statusSpan = graphContainer.querySelector('.graph-status');
+        if (statusSpan && latestResult.status) {
+          statusSpan.textContent = latestResult.status;
+          statusSpan.className = `graph-status ${latestResult.status}`;
+        }
+      }
     }
     
     const chartCanvas = document.getElementById(`chart-${graphId}`);
