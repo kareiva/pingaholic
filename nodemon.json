@@ -1,0 +1,18 @@
+{
+  "restartable": "rs",
+  "ignore": [
+    "db/*",
+    "db/data.json",
+    "node_modules/*",
+    ".git",
+    "public/*"
+  ],
+  "verbose": true,
+  "watch": [
+    "server.js",
+    "routes/",
+    "services/"
+  ],
+  "ext": "js,json",
+  "delay": "1000"
+} 
