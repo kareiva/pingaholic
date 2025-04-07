@@ -123,24 +123,23 @@ async function setTurboMode(enabled, interval = 5) {
     pingTask.stop();
   }
   
-  // Reschedule with the new interval
-  pingTask = cron.schedule(`*/${PING_INTERVAL} * * * * *`, () => {
-    pingAllTargets().catch(err => {
-      console.error(`[${new Date().toISOString()}] Error during scheduled turbo ping:`, err);
-    });
-  });
-  
-  // Reset the next ping time based on new interval
+  // Reset the timing variables before scheduling the new task
   lastPingTime = new Date();
   nextPingTime = new Date(lastPingTime.getTime() + (PING_INTERVAL * 1000));
   
-  // Optional: Run a ping immediately when enabling turbo mode
-  if (enabled) {
-    try {
-      await pingAllTargets();
-    } catch (err) {
-      console.error(`[${new Date().toISOString()}] Error during immediate turbo ping:`, err);
-    }
+  // Reschedule with the new interval
+  pingTask = cron.schedule(`*/${PING_INTERVAL} * * * * *`, () => {
+    pingAllTargets().catch(err => {
+      console.error(`[${new Date().toISOString()}] Error during scheduled ping:`, err);
+    });
+  });
+  
+  // Always run a ping immediately when mode changes (both enabling and disabling)
+  try {
+    console.log(`[${new Date().toISOString()}] Performing immediate ping after changing to ${enabled ? 'turbo' : 'normal'} mode`);
+    await pingAllTargets();
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] Error during immediate ping after mode change:`, err);
   }
 }
 
