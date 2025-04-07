@@ -1,8 +1,8 @@
 {
   "restartable": "rs",
   "ignore": [
-    "db/*",
-    "db/data.json",
+    "db/*.db",
+    "db/network_monitor.db",
     "node_modules/*",
     ".git",
     "public/*"

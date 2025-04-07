@@ -33,7 +33,7 @@ async function pingTarget(target) {
     console.log(`[${new Date().toISOString()}] Response from ${target.name} (${target.ip}): ${result.alive ? 'alive' : 'unreachable'}, time: ${result.time ? result.time + 'ms' : 'N/A'}`);
     
     // Save result to database
-    db.savePingResult(pingResult);
+    await db.savePingResult(pingResult);
     
     return pingResult;
   } catch (error) {
@@ -55,7 +55,7 @@ async function pingAllTargets() {
     // Calculate next ping time
     nextPingTime = new Date(lastPingTime.getTime() + (PING_INTERVAL * 1000));
     
-    let targets = db.getTargets();
+    let targets = await db.getTargets();
     
     // Extra safety check to ensure targets is an array
     if (!Array.isArray(targets)) {
@@ -105,7 +105,7 @@ function getPingStatus() {
 }
 
 // Set turbo mode on or off
-function setTurboMode(enabled, interval = 5) {
+async function setTurboMode(enabled, interval = 5) {
   if (enabled === isTurboMode) {
     // No change needed if already in the requested state
     return;
@@ -125,7 +125,9 @@ function setTurboMode(enabled, interval = 5) {
   
   // Reschedule with the new interval
   pingTask = cron.schedule(`*/${PING_INTERVAL} * * * * *`, () => {
-    pingAllTargets();
+    pingAllTargets().catch(err => {
+      console.error(`[${new Date().toISOString()}] Error during scheduled turbo ping:`, err);
+    });
   });
   
   // Reset the next ping time based on new interval
@@ -134,24 +136,36 @@ function setTurboMode(enabled, interval = 5) {
   
   // Optional: Run a ping immediately when enabling turbo mode
   if (enabled) {
-    pingAllTargets();
+    try {
+      await pingAllTargets();
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] Error during immediate turbo ping:`, err);
+    }
   }
 }
 
 // Start monitoring
-function startMonitoring() {
-  // Run immediately on startup
-  pingAllTargets();
-  
-  // Schedule regular pings
-  pingTask = cron.schedule(`*/${PING_INTERVAL} * * * * *`, () => {
-    pingAllTargets();
-  });
-  
-  // Set initial next ping time
-  if (!nextPingTime) {
-    lastPingTime = new Date();
-    nextPingTime = new Date(lastPingTime.getTime() + (PING_INTERVAL * 1000));
+async function startMonitoring() {
+  try {
+    // Run immediately on startup
+    await pingAllTargets();
+    
+    // Schedule regular pings
+    pingTask = cron.schedule(`*/${PING_INTERVAL} * * * * *`, () => {
+      pingAllTargets().catch(err => {
+        console.error(`[${new Date().toISOString()}] Error during scheduled ping:`, err);
+      });
+    });
+    
+    // Set initial next ping time
+    if (!nextPingTime) {
+      lastPingTime = new Date();
+      nextPingTime = new Date(lastPingTime.getTime() + (PING_INTERVAL * 1000));
+    }
+
+    console.log(`[${new Date().toISOString()}] Ping monitoring started. Interval: ${PING_INTERVAL}s`);
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] Failed to start monitoring:`, err);
   }
 }
 

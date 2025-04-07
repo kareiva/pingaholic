@@ -972,22 +972,22 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Update dataset attribute for sorting
             graphContainer.dataset.status = status;
-            
-            // Apply pulse animation to chart container
-            const chartContainer = graphContainer.querySelector('.chart-container');
-            
-            // Remove any existing pulse classes
-            chartContainer.classList.remove('chart-pulse-green', 'chart-pulse-red');
-            
-            // Force a reflow to ensure animation runs again
-            void chartContainer.offsetWidth;
-            
-            // Add the appropriate pulse class based on status
-            if (status === 'green') {
-              chartContainer.classList.add('chart-pulse-green');
-            } else if (status === 'red') {
-              chartContainer.classList.add('chart-pulse-red');
-            }
+          }
+          
+          // Always apply pulse animation to chart container when data updates
+          const chartContainer = graphContainer.querySelector('.chart-container');
+          
+          // Remove any existing pulse classes
+          chartContainer.classList.remove('chart-pulse-green', 'chart-pulse-red');
+          
+          // Force a reflow to ensure animation runs again
+          void chartContainer.offsetWidth;
+          
+          // Add the appropriate pulse class based on status
+          if (status === 'green') {
+            chartContainer.classList.add('chart-pulse-green');
+          } else if (status === 'red') {
+            chartContainer.classList.add('chart-pulse-red');
           }
         }
       }
@@ -1470,7 +1470,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       
-      // Apply pulse animation to chart container
+      // Always apply pulse animation to chart container when updating data
       const chartContainer = graphContainer.querySelector('.chart-container');
       
       // Remove any existing pulse classes
@@ -1598,6 +1598,30 @@ document.addEventListener('DOMContentLoaded', () => {
   // Create or update chart - wrapped in try-catch to handle potential Chart.js errors
   function createOrUpdateChart(ip, chartCanvas, labels, data, existingChart = null) {
     try {
+      // Get the latest status for adding pulse animation
+      let status = 'unknown';
+      if (data.length > 0) {
+        const latestValue = data[data.length - 1];
+        status = latestValue === null ? 'red' : 'green';
+      }
+      
+      // Apply pulse animation to chart container
+      const chartContainer = chartCanvas.closest('.chart-container');
+      if (chartContainer) {
+        // Remove any existing pulse classes
+        chartContainer.classList.remove('chart-pulse-green', 'chart-pulse-red');
+        
+        // Force a reflow to ensure animation runs again
+        void chartContainer.offsetWidth;
+        
+        // Add the appropriate pulse class based on status
+        if (status === 'green') {
+          chartContainer.classList.add('chart-pulse-green');
+        } else if (status === 'red') {
+          chartContainer.classList.add('chart-pulse-red');
+        }
+      }
+      
       if (charts[ip]) {
         charts[ip].data.labels = labels;
         charts[ip].data.datasets[0].data = data;

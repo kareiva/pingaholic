@@ -13,13 +13,14 @@
     "node-cron": "^3.0.2",
     "lowdb": "^1.0.0",
     "ip": "^1.1.8",
-    "chart.js": "^4.4.0"
+    "chart.js": "^4.4.0",
+    "sqlite3": "^5.1.6"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
   },
   "nodemonConfig": {
-    "ignore": ["db/*", "db/data.json"],
+    "ignore": ["db/*.db", "db/network_monitor.db"],
     "delay": "1000"
   }
-} 
+}

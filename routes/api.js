@@ -16,41 +16,46 @@ let turboModeEnabled = false;
 const TURBO_MODE_INTERVAL = 5;
 
 // Get all targets
-router.get('/targets', (req, res) => {
-  const targets = db.getTargets();
-  res.json(targets);
+router.get('/targets', async (req, res) => {
+  try {
+    const targets = await db.getTargets();
+    res.json(targets);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error getting targets:`, error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Add a new target
-router.post('/targets', (req, res) => {
-  const { ip, name } = req.body;
+router.post('/targets', async (req, res) => {
+  const { ip: ipAddress, name } = req.body;
   
-  if (!ip) {
+  if (!ipAddress) {
     console.log(`[${new Date().toISOString()}] Target creation rejected: missing IP address`);
     return res.status(400).json({ error: 'IP address is required' });
   }
   
   try {
     // Check if a target with this IP already exists
-    const existingTargets = db.getTargets();
-    const existingTarget = existingTargets.find(target => target.ip === ip);
+    const targets = await db.getTargets();
+    const existingTarget = targets.find(target => target.ip === ipAddress);
     
     if (existingTarget) {
-      console.log(`[${new Date().toISOString()}] Target creation rejected: IP ${ip} already exists`);
+      console.log(`[${new Date().toISOString()}] Target creation rejected: IP ${ipAddress} already exists`);
       return res.status(409).json({ error: 'A target with this IP address already exists' });
     }
     
     const target = {
-      ip,
-      name: name || `Host-${ip.split('.').pop()}`,
+      ip: ipAddress,
+      name: name || `Host-${ipAddress.split('.').pop()}`,
       added: Date.now()
     };
     
     console.log(`[${new Date().toISOString()}] Adding new target: ${target.name} (${target.ip})`);
-    db.addTarget(target);
+    const newTarget = await db.addTarget(target);
     console.log(`[${new Date().toISOString()}] Target added successfully`);
     
-    res.status(201).json(target);
+    res.status(201).json(newTarget);
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Error adding target:`, error);
     res.status(500).json({ error: 'Internal server error' });
@@ -58,37 +63,54 @@ router.post('/targets', (req, res) => {
 });
 
 // Remove a target
-router.delete('/targets/:ip', (req, res) => {
-  const { ip } = req.params;
-  console.log(`[${new Date().toISOString()}] Removing target with IP: ${ip}`);
-  db.removeTarget(ip);
-  res.status(204).send();
+router.delete('/targets/:ip', async (req, res) => {
+  const { ip: ipAddress } = req.params;
+  
+  try {
+    console.log(`[${new Date().toISOString()}] Removing target with IP: ${ipAddress}`);
+    await db.removeTarget(ipAddress);
+    res.status(204).send();
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error removing target:`, error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Get ping results for a target
-router.get('/results/:ip', (req, res) => {
-  const { ip } = req.params;
+router.get('/results/:ip', async (req, res) => {
+  const { ip: ipAddress } = req.params;
   const limit = parseInt(req.query.limit) || 100;
   
-  const results = db.getPingResults(ip, limit);
-  res.json(results);
+  try {
+    const results = await db.getPingResults(ipAddress, limit);
+    res.json(results);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error getting ping results:`, error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Ping all targets now
 router.post('/ping', async (req, res) => {
   console.log(`[${new Date().toISOString()}] Manual ping request received`);
-  const results = await pingService.pingAllTargets();
   
-  // Get the timing information
-  const pingStatus = pingService.getPingStatus();
-  
-  console.log(`[${new Date().toISOString()}] Manual ping completed with ${results.length} results`);
-  
-  // Return both the results and timing information
-  res.json({
-    results: results,
-    pingStatus: pingStatus
-  });
+  try {
+    const results = await pingService.pingAllTargets();
+    
+    // Get the timing information
+    const pingStatus = pingService.getPingStatus();
+    
+    console.log(`[${new Date().toISOString()}] Manual ping completed with ${results.length} results`);
+    
+    // Return both the results and timing information
+    res.json({
+      results: results,
+      pingStatus: pingStatus
+    });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error in manual ping:`, error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Discover hosts in a network range with progress updates
@@ -173,14 +195,14 @@ router.post('/discover', async (req, res) => {
         };
         
         // Check if this host already exists in the targets
-        const existingTargets = db.getTargets();
-        const existingTarget = existingTargets.find(target => target.ip === currentIp);
+        const targets = await db.getTargets();
+        const existingTarget = targets.find(target => target.ip === currentIp);
         
         let addedToTargets = false;
         
         // Only add if it doesn't already exist
         if (!existingTarget) {
-          db.addTarget(host);
+          await db.addTarget(host);
           addedToTargets = true;
           console.log(`[${new Date().toISOString()}] Host found: ${currentIp}, response time: ${result.time}ms, added to targets`);
         } else {
@@ -221,16 +243,16 @@ router.post('/discover', async (req, res) => {
 });
 
 // Update the debug endpoint
-router.get('/debug/database', (req, res) => {
+router.get('/debug/database', async (req, res) => {
   try {
     // Get direct debug info
-    const debugInfo = db.debug();
+    const debugInfo = await db.debug();
     
     // Get current targets using the normal method
-    const targets = db.getTargets();
+    const targets = await db.getTargets();
     
     res.json({
-      fileInfo: debugInfo,
+      dbInfo: debugInfo,
       targets,
       timestamp: new Date().toISOString()
     });
@@ -243,43 +265,46 @@ router.get('/debug/database', (req, res) => {
 });
 
 // Add a route to reset a target's ping data
-router.post('/targets/:ip/reset', (req, res) => {
-  const { ip } = req.params;
+router.post('/targets/:ip/reset', async (req, res) => {
+  const { ip: ipAddress } = req.params;
   
   try {
-    console.log(`[${new Date().toISOString()}] Resetting ping data for target: ${ip}`);
+    console.log(`[${new Date().toISOString()}] Resetting ping data for target: ${ipAddress}`);
     
     // Check if target exists
-    const targets = db.getTargets();
-    const targetExists = targets.some(target => target.ip === ip);
+    const targets = await db.getTargets();
+    const targetExists = targets.some(target => target.ip === ipAddress);
     
     if (!targetExists) {
-      console.log(`[${new Date().toISOString()}] Reset failed: Target ${ip} not found`);
+      console.log(`[${new Date().toISOString()}] Reset failed: Target ${ipAddress} not found`);
       return res.status(404).json({ error: 'Target not found' });
     }
     
     // Clear ping results for the target
-    db.clearPingResults(ip);
+    await db.clearPingResults(ipAddress);
     
-    console.log(`[${new Date().toISOString()}] Successfully reset ping data for ${ip}`);
+    console.log(`[${new Date().toISOString()}] Successfully reset ping data for ${ipAddress}`);
     res.status(200).json({ success: true });
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Error resetting ping data for ${ip}:`, error);
+    console.error(`[${new Date().toISOString()}] Error resetting ping data for ${ipAddress}:`, error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Add a route to reset the database
-router.post('/debug/reset-database', (req, res) => {
+router.post('/debug/reset-database', async (req, res) => {
   try {
     console.log('[DATABASE] Resetting database...');
-    const result = db.resetDatabase();
+    await db.resetDatabase();
     console.log('[DATABASE] Database reset completed');
+    
+    // Get updated target count
+    const targets = await db.getTargets();
     
     res.json({
       success: true,
       message: 'Database has been reset and rebuilt',
-      targets: result.targets.length
+      targets: targets.length
     });
   } catch (error) {
     console.error('Error resetting database:', error);
@@ -304,7 +329,7 @@ router.get('/ping/status', (req, res) => {
 });
 
 // Toggle turbo mode
-router.post('/ping/turbo', (req, res) => {
+router.post('/ping/turbo', async (req, res) => {
   try {
     // Get the requested state from the body
     const { enabled } = req.body;
@@ -316,9 +341,9 @@ router.post('/ping/turbo', (req, res) => {
       
       // Update the ping service interval
       if (turboModeEnabled) {
-        pingService.setTurboMode(true, TURBO_MODE_INTERVAL);
+        await pingService.setTurboMode(true, TURBO_MODE_INTERVAL);
       } else {
-        pingService.setTurboMode(false);
+        await pingService.setTurboMode(false);
       }
     }
     

@@ -15,10 +15,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api', apiRoutes);
 
 // Start the server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   
-  // Initialize ping service
-  console.log('Starting ping service');
-  pingService.startMonitoring();
+  try {
+    // First ensure database is ready by querying it
+    await db.getTargets();
+    
+    // Initialize ping service once database is ready
+    console.log('Database initialized, starting ping service');
+    pingService.startMonitoring();
+  } catch (err) {
+    console.error('Failed to initialize database or start ping service:', err);
+  }
 }); 
