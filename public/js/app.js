@@ -1235,11 +1235,16 @@ document.addEventListener('DOMContentLoaded', () => {
     showModal('Discovery Results', hostsHtml);
     
     // Add event listener to OK button
-    document.getElementById('ok-button').addEventListener('click', () => {
-      closeModal();
-      // Refresh the targets list to show the newly added hosts
-      loadTargets();
-    });
+    const okButton = document.getElementById('ok-button');
+    if (okButton) {
+      okButton.addEventListener('click', () => {
+        closeModal();
+        // Refresh the targets list to show the newly added hosts
+        loadTargets();
+      });
+    } else {
+      console.error('OK button not found in discovery results modal');
+    }
   }
   
   // Add discovered hosts to monitoring
@@ -1291,6 +1296,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if (closeBtn) {
       closeBtn.addEventListener('click', closeModal);
     }
+    
+    // Add specific styling to ensure primary buttons are visible
+    const primaryButtons = modal.querySelectorAll('.primary-btn');
+    primaryButtons.forEach(button => {
+      if (button.style.display === 'none') {
+        console.warn('Found a hidden primary button, making it visible');
+        button.style.display = 'inline-block';
+      }
+      
+      // Ensure button has proper styling
+      button.style.backgroundColor = '#2ecc71';
+      button.style.color = 'white';
+      button.style.padding = '8px 15px';
+      button.style.borderRadius = '6px';
+      button.style.cursor = 'pointer';
+      button.style.border = 'none';
+      button.style.marginTop = '10px';
+    });
     
     // Close modal when clicking outside
     window.addEventListener('click', (e) => {
