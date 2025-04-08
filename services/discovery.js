@@ -2,6 +2,30 @@ const ping = require('ping');
 const ip = require('ip');
 const db = require('../db/database');
 
+// Function to generate a Docker-style random host name with drinking-related adjectives
+function generateDrunkenHostName() {
+  const drinkingAdjectives = [
+    'tipsy', 'buzzed', 'wobbly', 'woozy', 'dizzy', 'sloshed', 'boozy',
+    'malty', 'foamy', 'spirited', 'bubbly', 'fermented', 'distilled',
+    'pickled', 'hoppy', 'frothy', 'intoxicated', 'groggy', 'staggering',
+    'tequila', 'whiskey', 'bourbon', 'scotch', 'vodka', 'drunken',
+    'brewed', 'merry', 'jolly', 'barley', 'potent', 'spiked'
+  ];
+  
+  const randomNouns = [
+    'penguin', 'octopus', 'falcon', 'walrus', 'koala', 'badger', 'otter',
+    'tiger', 'panda', 'jaguar', 'elephant', 'wombat', 'platypus', 'meerkat',
+    'gorilla', 'dolphin', 'raccoon', 'narwhal', 'salmon', 'buffalo', 'mongoose',
+    'ferret', 'squirrel', 'lobster', 'hedgehog', 'beaver', 'armadillo',
+    'gecko', 'iguana', 'pelican', 'ostrich', 'flamingo', 'hippo', 'turtle'
+  ];
+  
+  const randomAdjective = drinkingAdjectives[Math.floor(Math.random() * drinkingAdjectives.length)];
+  const randomNoun = randomNouns[Math.floor(Math.random() * randomNouns.length)];
+  
+  return `${randomAdjective}_${randomNoun}`;
+}
+
 // Discover hosts in a network range
 async function discoverHosts(networkRange) {
   console.log(`[${new Date().toISOString()}] Starting network discovery for range: ${networkRange}`);
@@ -41,7 +65,7 @@ async function discoverHosts(networkRange) {
         
         discoveredHosts.push({
           ip: currentIp,
-          name: `Host-${currentIp.split('.').pop()}`,
+          name: generateDrunkenHostName(),
           alive: true
         });
       }

@@ -15,6 +15,30 @@ let turboModeEnabled = false;
 // Default ping interval is 60 seconds, turbo mode is 5 seconds
 const TURBO_MODE_INTERVAL = 5;
 
+// Function to generate a Docker-style random host name with drinking-related adjectives
+function generateDrunkenHostName() {
+  const drinkingAdjectives = [
+    'tipsy', 'buzzed', 'wobbly', 'woozy', 'dizzy', 'sloshed', 'boozy',
+    'malty', 'foamy', 'spirited', 'bubbly', 'fermented', 'distilled',
+    'pickled', 'hoppy', 'frothy', 'intoxicated', 'groggy', 'staggering',
+    'tequila', 'whiskey', 'bourbon', 'scotch', 'vodka', 'drunken',
+    'brewed', 'merry', 'jolly', 'barley', 'potent', 'spiked'
+  ];
+  
+  const randomNouns = [
+    'penguin', 'octopus', 'falcon', 'walrus', 'koala', 'badger', 'otter',
+    'tiger', 'panda', 'jaguar', 'elephant', 'wombat', 'platypus', 'meerkat',
+    'gorilla', 'dolphin', 'raccoon', 'narwhal', 'salmon', 'buffalo', 'mongoose',
+    'ferret', 'squirrel', 'lobster', 'hedgehog', 'beaver', 'armadillo',
+    'gecko', 'iguana', 'pelican', 'ostrich', 'flamingo', 'hippo', 'turtle'
+  ];
+  
+  const randomAdjective = drinkingAdjectives[Math.floor(Math.random() * drinkingAdjectives.length)];
+  const randomNoun = randomNouns[Math.floor(Math.random() * randomNouns.length)];
+  
+  return `${randomAdjective}_${randomNoun}`;
+}
+
 // Get all targets
 router.get('/targets', async (req, res) => {
   try {
@@ -47,7 +71,7 @@ router.post('/targets', async (req, res) => {
     
     const target = {
       ip: ipAddress,
-      name: name || `Host-${ipAddress.split('.').pop()}`,
+      name: name || generateDrunkenHostName(),
       added: Date.now()
     };
     
@@ -188,7 +212,7 @@ router.post('/discover', async (req, res) => {
       if (result.alive) {
         const host = {
           ip: currentIp,
-          name: `Host-${currentIp.split('.').pop()}`,
+          name: generateDrunkenHostName(),
           alive: true,
           time: result.time,
           added: Date.now()

@@ -897,6 +897,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 1000);
   }
   
+  // Generate a Docker-style random host name with drinking-related adjectives
+  function generateDrunkenHostName() {
+    const drinkingAdjectives = [
+      'tipsy', 'buzzed', 'wobbly', 'woozy', 'dizzy', 'sloshed', 'boozy',
+      'malty', 'foamy', 'spirited', 'bubbly', 'fermented', 'distilled',
+      'pickled', 'hoppy', 'frothy', 'intoxicated', 'groggy', 'staggering',
+      'tequila', 'whiskey', 'bourbon', 'scotch', 'vodka', 'drunken',
+      'brewed', 'merry', 'jolly', 'barley', 'potent', 'spiked'
+    ];
+    
+    const randomNouns = [
+      'penguin', 'octopus', 'falcon', 'walrus', 'koala', 'badger', 'otter',
+      'tiger', 'panda', 'jaguar', 'elephant', 'wombat', 'platypus', 'meerkat',
+      'gorilla', 'dolphin', 'raccoon', 'narwhal', 'salmon', 'buffalo', 'mongoose',
+      'ferret', 'squirrel', 'lobster', 'hedgehog', 'beaver', 'armadillo',
+      'gecko', 'iguana', 'pelican', 'ostrich', 'flamingo', 'hippo', 'turtle'
+    ];
+    
+    const randomAdjective = drinkingAdjectives[Math.floor(Math.random() * drinkingAdjectives.length)];
+    const randomNoun = randomNouns[Math.floor(Math.random() * randomNouns.length)];
+    
+    return `${randomAdjective}_${randomNoun}`;
+  }
+
   // Add a new target
   async function handleAddTarget(e) {
     e.preventDefault();
@@ -910,9 +934,12 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
+    // Generate a funny host name if none provided
+    const hostName = nameInput.value || generateDrunkenHostName();
+    
     const target = {
       ip: ipInput.value,
-      name: nameInput.value || `Host-${ipInput.value.split('.').pop()}`
+      name: hostName
     };
     
     try {
