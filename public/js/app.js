@@ -142,6 +142,7 @@ function createOrUpdateChart(ip, chartCanvas, labels, data, existingChart = null
               backgroundColor: 'rgba(52, 152, 219, 0.2)',
               borderWidth: 2,
               tension: 0.3,
+              spanGaps: true,
               pointRadius: 3,
               pointBackgroundColor: function(context) {
                 // Color points based on status (red = timeout/error, green = success)
@@ -239,6 +240,7 @@ function createOrUpdateChart(ip, chartCanvas, labels, data, existingChart = null
               backgroundColor: 'rgba(52, 152, 219, 0.2)',
               borderWidth: 2,
               tension: 0.3,
+              spanGaps: true,
               pointRadius: 3,
               pointBackgroundColor: function(context) {
                 // Color points based on status (red = timeout/error, green = success)
