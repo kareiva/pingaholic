@@ -1267,6 +1267,115 @@ input:focus {
   color: var(--text-dark);
 }
 
+/* View selector */
+.view-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 20px;
+  font-size: 0.9rem;
+  color: var(--text-secondary-dark);
+}
+
+.view-selector label {
+  font-weight: 500;
+}
+
+.view-mode-select {
+  background-color: rgba(46, 204, 113, 0.15);
+  border: 1px solid rgba(46, 204, 113, 0.3);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  color: var(--text-dark);
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+}
+
+.view-mode-select:hover {
+  background-color: rgba(46, 204, 113, 0.25);
+  border-color: rgba(46, 204, 113, 0.5);
+}
+
+.view-mode-select:focus {
+  background-color: rgba(46, 204, 113, 0.2);
+  border-color: var(--success-color);
+  box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+}
+
+.view-mode-select option {
+  background-color: var(--card-dark);
+  color: var(--text-dark);
+}
+
+/* Dense view styles */
+.dashboard-container.dense-view .graphs {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.dashboard-container.dense-view .graph-container {
+  padding: 8px 8px 4px 8px;
+}
+
+.dashboard-container.dense-view .graph-header {
+  padding: 4px 8px 8px 8px;
+  margin-bottom: 4px;
+}
+
+.dashboard-container.dense-view .graph-header h3 {
+  font-size: 0.95rem;
+  margin-bottom: 0;
+}
+
+.dashboard-container.dense-view .graph-details {
+  font-size: 0.75rem;
+}
+
+.dashboard-container.dense-view .chart-container {
+  height: 180px;
+  padding: 5px 0 0 0;
+  margin-bottom: 0;
+}
+
+.dashboard-container.dense-view .graphs-container h2 {
+  font-size: 1.3rem;
+  margin-bottom: 12px;
+}
+
+.dashboard-container.dense-view .dropdown-toggle {
+  padding: 2px;
+}
+
+.dashboard-container.dense-view .dots {
+  gap: 2px;
+}
+
+.dashboard-container.dense-view .dot {
+  width: 3px;
+  height: 3px;
+}
+
+/* Dense view - 2 column layout on tablets */
+@media (max-width: 1024px) {
+  .dashboard-container.dense-view .graphs {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
+
+/* Dense view - 1 column on mobile */
+@media (max-width: 768px) {
+  .dashboard-container.dense-view .graphs {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .dashboard-container.dense-view .chart-container {
+    height: 160px;
+  }
+}
+
 /* Chart pulse animation */
 @keyframes chartPulseGreen {
   0% { background-color: var(--card-dark); }

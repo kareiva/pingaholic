@@ -4,6 +4,7 @@ const charts = {};
 let graphsContainer, targetsCounter, targetsList;
 let selectedTimeInterval = 60; // Default to 1 hour (in minutes)
 let globalMaxPingTime = 100; // Global max ping time for Y-axis alignment (default 100ms)
+let currentViewMode = 'classic'; // Default to classic view
 
 // Helper function to sort targets (simplified to only sort by IP)
 function sortTargets(targets) {
@@ -455,6 +456,57 @@ document.addEventListener('DOMContentLoaded', () => {
       loadTargets().catch(err => {
         console.error('Error reloading targets after time interval change:', err);
       });
+    });
+  }
+
+  // View mode selector event listener
+  const viewModeSelect = document.getElementById('view-mode');
+  const dashboardContainer = document.querySelector('.dashboard-container');
+
+  // Load saved view mode from localStorage
+  const savedViewMode = localStorage.getItem('viewMode');
+  if (savedViewMode && (savedViewMode === 'classic' || savedViewMode === 'dense')) {
+    currentViewMode = savedViewMode;
+    if (viewModeSelect) {
+      viewModeSelect.value = savedViewMode;
+    }
+  }
+
+  // Apply initial view mode
+  if (currentViewMode === 'dense' && dashboardContainer) {
+    dashboardContainer.classList.add('dense-view');
+  }
+
+  if (viewModeSelect) {
+    viewModeSelect.addEventListener('change', (e) => {
+      const newViewMode = e.target.value;
+      currentViewMode = newViewMode;
+
+      console.log(`View mode changed to ${newViewMode}`);
+
+      // Save to localStorage
+      localStorage.setItem('viewMode', newViewMode);
+
+      // Apply or remove dense-view class
+      if (dashboardContainer) {
+        if (newViewMode === 'dense') {
+          dashboardContainer.classList.add('dense-view');
+        } else {
+          dashboardContainer.classList.remove('dense-view');
+        }
+      }
+
+      // Trigger a small animation to indicate the change
+      if (graphsContainer) {
+        anime({
+          targets: '.graph-container',
+          scale: [0.98, 1],
+          opacity: [0.7, 1],
+          duration: 300,
+          easing: 'easeOutCubic',
+          delay: anime.stagger(20)
+        });
+      }
     });
   }
   
