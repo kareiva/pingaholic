@@ -3,6 +3,7 @@ let isInitialLoad = true;
 const charts = {};
 let graphsContainer, targetsCounter, targetsList;
 let selectedTimeInterval = 60; // Default to 1 hour (in minutes)
+let globalMaxPingTime = 100; // Global max ping time for Y-axis alignment (default 100ms)
 
 // Helper function to sort targets (simplified to only sort by IP)
 function sortTargets(targets) {
@@ -112,6 +113,8 @@ function createOrUpdateChart(ip, chartCanvas, labels, data, existingChart = null
       try {
         charts[ip].data.labels = labels;
         charts[ip].data.datasets[0].data = data;
+        // Update Y-axis max to use the global max
+        charts[ip].options.scales.y.max = globalMaxPingTime;
         charts[ip].update('none'); // Use 'none' animation for updates during sorting
         return true;
       } catch (updateError) {
@@ -156,6 +159,7 @@ function createOrUpdateChart(ip, chartCanvas, labels, data, existingChart = null
             scales: {
               y: {
                 beginAtZero: true,
+                max: globalMaxPingTime,
                 grid: {
                   color: 'rgba(255, 255, 255, 0.05)'
                 },
@@ -252,6 +256,7 @@ function createOrUpdateChart(ip, chartCanvas, labels, data, existingChart = null
             scales: {
               y: {
                 beginAtZero: true,
+                max: globalMaxPingTime,
                 grid: {
                   color: 'rgba(255, 255, 255, 0.05)'
                 },
@@ -1920,46 +1925,70 @@ function renderGraph(ip, results, targetName, existingChart = null) {
 // Update loadTargets to return a promise and track duration
 async function loadTargets() {
   const startTime = Date.now();
-  
+
   try {
     const response = await fetch('/api/targets');
     let targets = await response.json();
-    
+
     // Sort targets by IP
     targets = sortTargets(targets);
-    
+
     // Store chart references before rebuilding
     const existingCharts = {...charts};
-    
+
     // Update targets counter
     targetsCounter.textContent = targets.length;
-    
+
     // Clear the targets list and rebuild it
     renderTargets(targets);
-    
-    // Update all graphs with new data
+
+    // First pass: load all results and calculate global max ping time
+    const allResults = [];
     for (const target of targets) {
       try {
-        // Load ping results and create/update the graph
         const resultsResponse = await fetch(`/api/results/${target.ip}?limit=100`);
         const results = await resultsResponse.json();
-        
+        allResults.push({ target, results });
+      } catch (error) {
+        console.error(`Error loading ping results for ${target.ip}:`, error);
+        allResults.push({ target, results: [] });
+      }
+    }
+
+    // Calculate global max ping time across all targets (with filtered data)
+    let maxPing = 100; // Default minimum of 100ms
+    for (const { results } of allResults) {
+      const processedResults = filterAndPadResults(results, selectedTimeInterval);
+      for (const result of processedResults) {
+        if (result.time !== null && result.time > maxPing) {
+          maxPing = result.time;
+        }
+      }
+    }
+
+    // Add 10% padding to the max for better visualization
+    globalMaxPingTime = Math.ceil(maxPing * 1.1);
+    console.log(`Global max ping time set to ${globalMaxPingTime}ms (actual max: ${maxPing}ms)`);
+
+    // Second pass: render all graphs with the same Y-axis scale
+    for (const { target, results } of allResults) {
+      try {
         // Use existing chart if available
         renderGraph(target.ip, results, target.name, existingCharts[target.ip]);
       } catch (error) {
-        console.error(`Error processing ping results for ${target.ip}:`, error);
+        console.error(`Error rendering graph for ${target.ip}:`, error);
         // Still render with empty data if there's an error
         renderGraph(target.ip, [], target.name, existingCharts[target.ip]);
       }
     }
-    
+
     // After first load, set initial load flag to false
     isInitialLoad = false;
-    
+
     // Log how long it took to load and render everything
     const duration = (Date.now() - startTime) / 1000;
     console.log(`Loaded and rendered ${targets.length} targets in ${duration.toFixed(2)}s`);
-    
+
     return targets;
   } catch (error) {
     console.error('Error loading targets:', error);
