@@ -1225,6 +1225,48 @@ input:focus {
   text-align: center;
 }
 
+/* Time interval selector */
+.time-interval-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 20px;
+  font-size: 0.9rem;
+  color: var(--text-secondary-dark);
+}
+
+.time-interval-selector label {
+  font-weight: 500;
+}
+
+.time-interval-select {
+  background-color: rgba(52, 152, 219, 0.15);
+  border: 1px solid rgba(52, 152, 219, 0.3);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  color: var(--text-dark);
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+}
+
+.time-interval-select:hover {
+  background-color: rgba(52, 152, 219, 0.25);
+  border-color: rgba(52, 152, 219, 0.5);
+}
+
+.time-interval-select:focus {
+  background-color: rgba(52, 152, 219, 0.2);
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.time-interval-select option {
+  background-color: var(--card-dark);
+  color: var(--text-dark);
+}
+
 /* Chart pulse animation */
 @keyframes chartPulseGreen {
   0% { background-color: var(--card-dark); }

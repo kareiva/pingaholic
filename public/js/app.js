@@ -2,6 +2,7 @@
 let isInitialLoad = true;
 const charts = {};
 let graphsContainer, targetsCounter, targetsList;
+let selectedTimeInterval = 60; // Default to 1 hour (in minutes)
 
 // Helper function to sort targets (simplified to only sort by IP)
 function sortTargets(targets) {
@@ -23,14 +24,79 @@ function sortTargets(targets) {
 function formatTimeCompact(date, totalPoints) {
   // If we have many data points, show even more compact time (just hours:minutes)
   if (totalPoints > 20) {
-    return date.getHours().toString().padStart(2, '0') + ':' + 
+    return date.getHours().toString().padStart(2, '0') + ':' +
            date.getMinutes().toString().padStart(2, '0');
   } else {
     // For fewer points, include seconds but still formatted compactly
-    return date.getHours().toString().padStart(2, '0') + ':' + 
-           date.getMinutes().toString().padStart(2, '0') + ':' + 
+    return date.getHours().toString().padStart(2, '0') + ':' +
+           date.getMinutes().toString().padStart(2, '0') + ':' +
            date.getSeconds().toString().padStart(2, '0');
   }
+}
+
+// Helper function to filter and pad ping results based on selected time interval
+function filterAndPadResults(results, timeIntervalMinutes) {
+  const now = Date.now();
+  const timeRangeMs = timeIntervalMinutes * 60 * 1000;
+  const startTime = now - timeRangeMs;
+
+  // Filter results to only include those within the time range
+  const filteredResults = results.filter(result => result.timestamp >= startTime);
+
+  // Determine appropriate interval for data points based on time range
+  let intervalMs;
+  if (timeIntervalMinutes <= 1) {
+    intervalMs = 5 * 1000; // 5 seconds for last minute
+  } else if (timeIntervalMinutes <= 5) {
+    intervalMs = 15 * 1000; // 15 seconds for last 5 minutes
+  } else if (timeIntervalMinutes <= 15) {
+    intervalMs = 30 * 1000; // 30 seconds for last 15 minutes
+  } else if (timeIntervalMinutes <= 60) {
+    intervalMs = 60 * 1000; // 1 minute for last hour
+  } else if (timeIntervalMinutes <= 480) {
+    intervalMs = 5 * 60 * 1000; // 5 minutes for last 8 hours
+  } else if (timeIntervalMinutes <= 1440) {
+    intervalMs = 15 * 60 * 1000; // 15 minutes for last 24 hours
+  } else {
+    intervalMs = 60 * 60 * 1000; // 1 hour for last 72 hours
+  }
+
+  // Create continuous data points
+  const paddedResults = [];
+  let currentTime = startTime;
+
+  while (currentTime <= now) {
+    // Find the closest result to this time point
+    const closestResult = filteredResults.reduce((closest, result) => {
+      const currentDiff = Math.abs(result.timestamp - currentTime);
+      const closestDiff = closest ? Math.abs(closest.timestamp - currentTime) : Infinity;
+
+      // Only use results within half the interval
+      if (currentDiff < intervalMs / 2 && currentDiff < closestDiff) {
+        return result;
+      }
+      return closest;
+    }, null);
+
+    // Add the result or a null placeholder
+    if (closestResult) {
+      paddedResults.push({
+        ...closestResult,
+        timestamp: currentTime // Normalize timestamp to grid
+      });
+    } else {
+      paddedResults.push({
+        timestamp: currentTime,
+        alive: false,
+        time: null,
+        status: 'unknown'
+      });
+    }
+
+    currentTime += intervalMs;
+  }
+
+  return paddedResults;
 }
 
 // Create or update chart - wrapped in try-catch to handle potential Chart.js errors
@@ -363,9 +429,26 @@ document.addEventListener('DOMContentLoaded', () => {
   if (addTargetForm) {
     addTargetForm.addEventListener('submit', handleAddTarget);
   }
-  
+
   if (discoverForm) {
     discoverForm.addEventListener('submit', handleDiscoverHosts);
+  }
+
+  // Time interval selector event listener
+  const timeIntervalSelect = document.getElementById('time-interval');
+  if (timeIntervalSelect) {
+    // Set initial value from the dropdown
+    selectedTimeInterval = parseInt(timeIntervalSelect.value);
+
+    timeIntervalSelect.addEventListener('change', (e) => {
+      selectedTimeInterval = parseInt(e.target.value);
+      console.log(`Time interval changed to ${selectedTimeInterval} minutes`);
+
+      // Reload all graphs with the new time interval
+      loadTargets().catch(err => {
+        console.error('Error reloading targets after time interval change:', err);
+      });
+    });
   }
   
   // Add click event for ping timer to allow manual refresh
@@ -1787,15 +1870,18 @@ function renderGraph(ip, results, targetName, existingChart = null) {
     
     // Get the chart canvas element
     const chartCanvas = document.getElementById(chartId);
-    
+
+    // Filter and pad results based on selected time interval
+    const processedResults = filterAndPadResults(results, selectedTimeInterval);
+
     // Prepare data for the chart
-    const labels = results.map(result => {
+    const labels = processedResults.map(result => {
       const date = new Date(result.timestamp);
       // Use a more compact time format based on data density
-      return formatTimeCompact(date, results.length);
+      return formatTimeCompact(date, processedResults.length);
     });
-    
-    const data = results.map(result => result.time || null);
+
+    const data = processedResults.map(result => result.time || null);
     
     // Create or update the chart if canvas is available
     if (chartCanvas) {
@@ -1893,13 +1979,16 @@ async function updateGraphData(ip, name) {
     const graphContainer = document.getElementById(graphId);
     
     if (graphContainer && charts[ip]) {
+      // Filter and pad results based on selected time interval
+      const processedResults = filterAndPadResults(results, selectedTimeInterval);
+
       // Map the data for the chart
-      const labels = results.map(result => {
+      const labels = processedResults.map(result => {
         const date = new Date(result.timestamp);
-        return formatTimeCompact(date, results.length);
+        return formatTimeCompact(date, processedResults.length);
       });
-      
-      const data = results.map(result => result.time || null);
+
+      const data = processedResults.map(result => result.time || null);
       
       // Update the chart with new data
       const chartCanvas = document.getElementById(chartId);

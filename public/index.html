@@ -18,6 +18,18 @@
           <span id="ping-timer-value" class="ping-timer-value">60</span>
           <span>seconds</span>
         </div>
+        <div class="time-interval-selector">
+          <label for="time-interval">Time Range:</label>
+          <select id="time-interval" class="time-interval-select">
+            <option value="1">Last minute</option>
+            <option value="5">Last 5 minutes</option>
+            <option value="15">Last 15 minutes</option>
+            <option value="60" selected>Last hour</option>
+            <option value="480">Last 8 hours</option>
+            <option value="1440">Last 24 hours</option>
+            <option value="4320">Last 72 hours</option>
+          </select>
+        </div>
       </div>
       <div class="header-right">
         <form id="add-target-form" class="inline-form">
